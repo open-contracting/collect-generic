@@ -1,4 +1,4 @@
-# Scrapy settings for non_ocds_scrapy project
+# Scrapy settings for generic_scrapy project
 #
 # For simplicity, this file contains only settings considered important or
 # commonly used. You can find more settings consulting the documentation:
@@ -8,22 +8,22 @@
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 import os
 
-BOT_NAME = "non_ocds_scrapy"
+BOT_NAME = "generic_scrapy"
 
-SPIDER_MODULES = ["non_ocds_scrapy.spiders"]
-NEWSPIDER_MODULE = "non_ocds_scrapy.spiders"
+SPIDER_MODULES = ["generic_scrapy.spiders"]
+NEWSPIDER_MODULE = "generic_scrapy.spiders"
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
-USER_AGENT = "non_ocds_scrapy (+http://www.open-contracting.org)"
+USER_AGENT = "generic_scrapy (+http://www.open-contracting.org)"
 
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = False
 
-LOG_FORMATTER = "non_ocds_scrapy.log_formatter.LogFormatter"
+LOG_FORMATTER = "generic_scrapy.log_formatter.LogFormatter"
 FILES_STORE = os.getenv("FILES_STORE", "data")
 FEED_EXPORTERS = {
-    "csv": "non_ocds_scrapy.exporters.HeadlessCsvItemExporter",
+    "csv": "generic_scrapy.exporters.HeadlessCsvItemExporter",
 }
 
 # Configure maximum concurrent requests performed by Scrapy (default: 16)
@@ -52,13 +52,13 @@ CONCURRENT_REQUESTS = 32
 # Enable or disable spider middlewares
 # See https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 # SPIDER_MIDDLEWARES = {
-#    "non_ocds_scrapy.middlewares.NonOcdsScrapySpiderMiddleware": 543,
+#    "generic_scrapy.middlewares.NonOcdsScrapySpiderMiddleware": 543,
 # }
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 # DOWNLOADER_MIDDLEWARES = {
-#    "non_ocds_scrapy.middlewares.NonOcdsScrapyDownloaderMiddleware": 543,
+#    "generic_scrapy.middlewares.NonOcdsScrapyDownloaderMiddleware": 543,
 # }
 
 # Enable or disable extensions
@@ -70,7 +70,7 @@ CONCURRENT_REQUESTS = 32
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 # ITEM_PIPELINES = {
-#    "non_ocds_scrapy.pipelines.NonOcdsScrapyPipeline": 300,
+#    "generic_scrapy.pipelines.NonOcdsScrapyPipeline": 300,
 # }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
@@ -99,4 +99,4 @@ REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
 
-COMMANDS_MODULE = "non_ocds_scrapy.commands"
+COMMANDS_MODULE = "generic_scrapy.commands"

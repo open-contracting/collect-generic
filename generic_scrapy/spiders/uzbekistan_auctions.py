@@ -1,7 +1,7 @@
 import scrapy
 
-from non_ocds_scrapy.filters import UzbekistanAuctionFilter, UzbekistanAuctionProductFilter
-from non_ocds_scrapy.spiders.uzbekistan_base_spider import UzbekistanBaseSpider
+from generic_scrapy.filters import UzbekistanAuctionFilter, UzbekistanAuctionProductFilter
+from generic_scrapy.spiders.uzbekistan_base_spider import UzbekistanBaseSpider
 
 
 class UzbekistanAuctions(UzbekistanBaseSpider):

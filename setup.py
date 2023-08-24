@@ -8,7 +8,7 @@ setup(
     include_package_data=True,
     entry_points={
         "scrapy": [
-            "settings = non_ocds_scrapy.settings",
+            "settings = generic_scrapy.settings",
         ],
     },
 )

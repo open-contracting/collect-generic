@@ -1,7 +1,7 @@
 import os
 
-from non_ocds_scrapy.base_spiders.base_spider import BaseSpider
-from non_ocds_scrapy.settings import FILES_STORE
+from generic_scrapy.base_spiders.base_spider import BaseSpider
+from generic_scrapy.settings import FILES_STORE
 
 
 class ExportFileSpider(BaseSpider):
@@ -16,12 +16,12 @@ class ExportFileSpider(BaseSpider):
             'main': {
                 'name': 'main_file_name',
                 'formats': ['json', 'csv'],
-                'item_filter': non_ocds_scrapy.filters.MyCustomFilter2',
+                'item_filter': generic_scrapy.filters.MyCustomFilter2',
             },
             'secondary': {
                 'name': 'extra_file_name"',
                 'formats': ['json', 'csv'],
-                'item_filter': non_ocds_scrapy.filters.MyCustomFilter2',
+                'item_filter': generic_scrapy.filters.MyCustomFilter2',
                 'overwrite': True
                 }
             }

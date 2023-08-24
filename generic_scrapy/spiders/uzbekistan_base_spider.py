@@ -2,7 +2,7 @@ import json
 
 import scrapy
 
-from non_ocds_scrapy.base_spiders.export_file_spider import ExportFileSpider
+from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
 
 class UzbekistanBaseSpider(ExportFileSpider):

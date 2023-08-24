@@ -1,4 +1,4 @@
-from non_ocds_scrapy.spiders.uzbekistan_base_spider import UzbekistanBaseSpider
+from generic_scrapy.spiders.uzbekistan_base_spider import UzbekistanBaseSpider
 
 
 class UzbekistanDeals(UzbekistanBaseSpider):
