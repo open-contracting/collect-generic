@@ -29,7 +29,7 @@ class ExportFileSpider(BaseSpider):
         ```
         Where the 'main' key contains the main table to generate from the spider output and 'secondary' is for any
         additional table the spider might generate.
-        The files will be stored under settings.FILES_STORE/spider.name/spider.crawl_time
+        The files will be stored under settings.FILES_STORE/spider.name/spider.crawl_directory
 
     """
 
@@ -38,20 +38,29 @@ class ExportFileSpider(BaseSpider):
 
     @classmethod
     def update_settings(cls, settings):
+        super().update_settings(settings)
         feeds = {}
         for entry in cls.export_outputs.keys():
             item_filter = cls.export_outputs[entry]["item_filter"]
             file_name = cls.export_outputs[entry]["name"]
             for export_format in cls.export_outputs[entry]["formats"]:
-                file_path = os.path.join(FILES_STORE, "%(name)s/%(crawl_time)s", f"{file_name}.{export_format}")
-                feeds[file_path] = {"format": "jsonlines" if export_format == "json" else "csv"}
+                file_path = os.path.join(
+                    settings.get("FILES_STORE"),
+                    "%(name)s/%(crawl_directory)s",
+                    f"{file_name}.{export_format}",
+                )
+                feeds[file_path] = {
+                    "format": "jsonlines" if export_format == "json" else "csv"
+                }
                 if item_filter:
                     feeds[file_path]["item_filter"] = item_filter
                 if "overwrite" in cls.export_outputs[entry]:
-                    feeds[file_path]["overwrite"] = cls.export_outputs[entry]["overwrite"]
+                    feeds[file_path]["overwrite"] = cls.export_outputs[entry][
+                        "overwrite"
+                    ]
         custom_settings = {"FEEDS": feeds}
         settings.setdict(custom_settings, priority="spider")
 
     @classmethod
     def get_file_store_directory(cls):
-        return os.path.join(FILES_STORE, cls.name, cls.crawl_time.strftime("%Y-%m-%d %H:%M:%S"))
+        return os.path.join(FILES_STORE, cls.name, cls.crawl_directory)

@@ -16,10 +16,18 @@ class UzbekistanCompletedDeals(UzbekistanBaseSpider):
     # UzbekistanBaseSpider
     base_url = "https://xarid-api-shop.uzex.uz/Common/GetCompletedDeals"
 
+    # BaseSpider
+    default_from_date = "2022-01-01T00:00:00"
+
     def start_requests(self):
         for national in [1, 0]:
             filters = self.build_filters(
-                0, self.page_size, item={"display_on_shop": 0 if national else 1, "display_on_national": national}
+                0,
+                self.page_size,
+                item={
+                    "display_on_shop": 0 if national else 1,
+                    "display_on_national": national,
+                },
             )
             yield self.build_request(filters, callback=self.parse_list)
 

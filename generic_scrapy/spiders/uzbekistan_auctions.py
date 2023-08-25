@@ -1,6 +1,9 @@
 import scrapy
 
-from generic_scrapy.filters import UzbekistanAuctionFilter, UzbekistanAuctionProductFilter
+from generic_scrapy.filters import (
+    UzbekistanAuctionFilter,
+    UzbekistanAuctionProductFilter,
+)
 from generic_scrapy.spiders.uzbekistan_base_spider import UzbekistanBaseSpider
 
 
@@ -24,6 +27,9 @@ class UzbekistanAuctions(UzbekistanBaseSpider):
     # UzbekistanBaseSpider
     base_url = "https://xarid-api-auction.uzex.uz/Common/GetCompletedDeals"
     parse_callback = "parse_auctions"
+
+    # BaseSpider
+    default_from_date = "2022-01-01T00:00:00"
 
     def parse_auctions(self, response, **kwargs):
         for item in response.json():

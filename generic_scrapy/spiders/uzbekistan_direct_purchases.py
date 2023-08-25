@@ -12,6 +12,7 @@ class UzbekistanDirectPurchases(UzbekistanBaseSpider):
             "name": "uzbekistan_direct_purchases",
             "formats": ["csv"],
             "item_filter": None,
+            "overwrite": True,
         }
     }
 

@@ -6,11 +6,10 @@ from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
 
 class UzbekistanBaseSpider(ExportFileSpider):
-    page_size = 10
+    page_size = 100
     parse_callback = "parse"
 
     # BaseSpider
-    default_from_date = "2022-01-01T00:00:00"
     date_required = True
 
     def __init__(self, *args, **kwargs):
@@ -18,7 +17,10 @@ class UzbekistanBaseSpider(ExportFileSpider):
         self.parse_callback = getattr(self, self.parse_callback)
 
     def start_requests(self):
-        request = self.build_request(self.build_filters(0, self.page_size), callback=self.parse_list)
+        request = self.build_request(
+            self.build_filters(0, self.sample if self.sample else self.page_size),
+            callback=self.parse_list,
+        )
         yield request
 
     def parse(self, response, **kwargs):
@@ -26,15 +28,14 @@ class UzbekistanBaseSpider(ExportFileSpider):
             yield item
 
     def parse_list(self, response):
+        yield from self.parse_callback(response)
+        if self.sample:
+            return
         data = response.json()
+        if not data:
+            return
         item = data[0]
         range_end = item["total_count"]
-        if self.last_total_count:
-            range_end = range_end - self.last_total_count
-        # No new data, so the first page doesn't need to be scraped.
-        if range_end == 0:
-            return
-        yield from self.parse_callback(response)
         from_parameter = self.page_size + 1
         while from_parameter < range_end:
             to_parameter = from_parameter + self.page_size
@@ -52,7 +53,10 @@ class UzbekistanBaseSpider(ExportFileSpider):
         )
 
     def build_filters(self, from_parameter, to_parameter, **kwargs):
-        return {
+        filters = {
             "from": from_parameter,
             "to": to_parameter,
+            "date_from": self.from_date.strftime("%d.%m.%Y %H:%M"),
         }
+        if self.until_date:
+            filters["date_to"] = self.until_date.strftime("%d.%m.%Y %H:%M")
