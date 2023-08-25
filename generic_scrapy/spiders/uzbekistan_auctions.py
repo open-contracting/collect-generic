@@ -1,9 +1,6 @@
 import scrapy
 
-from generic_scrapy.filters import (
-    UzbekistanAuctionFilter,
-    UzbekistanAuctionProductFilter,
-)
+from generic_scrapy.filters import UzbekistanAuctionFilter, UzbekistanAuctionProductFilter
 from generic_scrapy.spiders.uzbekistan_base_spider import UzbekistanBaseSpider
 
 
