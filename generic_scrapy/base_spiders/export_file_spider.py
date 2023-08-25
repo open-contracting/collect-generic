@@ -49,15 +49,11 @@ class ExportFileSpider(BaseSpider):
                     "%(name)s/%(crawl_directory)s",
                     f"{file_name}.{export_format}",
                 )
-                feeds[file_path] = {
-                    "format": "jsonlines" if export_format == "json" else "csv"
-                }
+                feeds[file_path] = {"format": "jsonlines" if export_format == "json" else "csv"}
                 if item_filter:
                     feeds[file_path]["item_filter"] = item_filter
                 if "overwrite" in cls.export_outputs[entry]:
-                    feeds[file_path]["overwrite"] = cls.export_outputs[entry][
-                        "overwrite"
-                    ]
+                    feeds[file_path]["overwrite"] = cls.export_outputs[entry]["overwrite"]
         custom_settings = {"FEEDS": feeds}
         settings.setdict(custom_settings, priority="spider")
 

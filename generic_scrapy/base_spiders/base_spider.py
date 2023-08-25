@@ -67,9 +67,7 @@ class BaseSpider(scrapy.Spider):
         if crawl_directory:
             self.crawl_directory = crawl_directory
         else:
-            self.crawl_directory = datetime.strftime(
-                datetime.now(), self.VALID_DATE_FORMATS["datetime"]
-            )
+            self.crawl_directory = datetime.strftime(datetime.now(), self.VALID_DATE_FORMATS["datetime"])
 
         spider_arguments = {
             "sample": sample,
@@ -89,31 +87,21 @@ class BaseSpider(scrapy.Spider):
             try:
                 spider.sample = int(spider.sample)
             except ValueError:
-                raise UsageError(
-                    f"spider argument `sample`: invalid integer value: {spider.sample!r}"
-                )
+                raise UsageError(f"spider argument `sample`: invalid integer value: {spider.sample!r}")
 
         if spider.from_date or spider.until_date or spider.date_required:
             if not spider.from_date:
                 spider.from_date = spider.default_from_date
             try:
                 if isinstance(spider.from_date, str):
-                    spider.from_date = datetime.strptime(
-                        spider.from_date, spider.date_format
-                    )
+                    spider.from_date = datetime.strptime(spider.from_date, spider.date_format)
             except ValueError as e:
-                raise UsageError(
-                    f"spider argument `from_date`: invalid date value: {e}"
-                )
+                raise UsageError(f"spider argument `from_date`: invalid date value: {e}")
 
             try:
                 if isinstance(spider.until_date, str):
-                    spider.until_date = datetime.strptime(
-                        spider.until_date, spider.date_format
-                    )
+                    spider.until_date = datetime.strptime(spider.until_date, spider.date_format)
             except ValueError as e:
-                raise UsageError(
-                    f"spider argument `until_date`: invalid date value: {e}"
-                )
+                raise UsageError(f"spider argument `until_date`: invalid date value: {e}")
 
         return spider
