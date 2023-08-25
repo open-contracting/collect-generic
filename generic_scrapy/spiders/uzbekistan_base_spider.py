@@ -6,7 +6,7 @@ from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
 
 class UzbekistanBaseSpider(ExportFileSpider):
-    page_size = 100
+    page_size = 1000
     parse_callback = "parse"
 
     # BaseSpider
