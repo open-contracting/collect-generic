@@ -30,6 +30,7 @@ class UzbekistanAuctions(UzbekistanBaseSpider):
 
     def parse_auctions(self, response, **kwargs):
         for item in response.json():
+            item["procurement_method"] = 'Auction'
             yield item
             yield scrapy.Request(
                 f"https://xarid-api-auction.uzex.uz/Common/GetCompletedDealProducts/{item['lot_id']}",

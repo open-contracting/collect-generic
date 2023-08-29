@@ -32,6 +32,7 @@ class UzbekistanDirectPurchases(UzbekistanBaseSpider):
     def parse_direct_purchase_details(self, response, **kwargs):
         data = response.json()
         data["total_count"] = response.request.meta["total_count"]
+        data["procurement_method"] = "Direct Purchase"
         yield data
 
     def build_filters(self, from_parameter, to_parameter, **kwargs):

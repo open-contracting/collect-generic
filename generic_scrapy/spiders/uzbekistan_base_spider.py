@@ -6,7 +6,7 @@ from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
 
 class UzbekistanBaseSpider(ExportFileSpider):
-    page_size = 1000
+    page_size = 10
     parse_callback = "parse"
 
     # BaseSpider
@@ -60,3 +60,5 @@ class UzbekistanBaseSpider(ExportFileSpider):
         }
         if self.until_date:
             filters["date_to"] = self.until_date.strftime("%d.%m.%Y %H:%M")
+
+        return filters

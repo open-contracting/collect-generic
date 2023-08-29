@@ -31,6 +31,11 @@ class UzbekistanShop(UzbekistanBaseSpider):
             )
             yield self.build_request(filters, callback=self.parse_list)
 
+    def parse(self, response, **kwargs):
+        for item in response.json():
+            item["procurement_method"] = "National Store" if item["display_on_national"] else "Electronic Store"
+            yield item
+
     def build_filters(self, from_parameter, to_parameter, **kwargs):
         filters = super().build_filters(from_parameter, to_parameter)
         filters["display_on_shop"] = kwargs["item"]["display_on_shop"]
