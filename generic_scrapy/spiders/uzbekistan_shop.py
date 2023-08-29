@@ -1,13 +1,13 @@
 from generic_scrapy.spiders.uzbekistan_base_spider import UzbekistanBaseSpider
 
 
-class UzbekistanCompletedDeals(UzbekistanBaseSpider):
-    name = "uzbekistan_completed_deals"
+class UzbekistanShop(UzbekistanBaseSpider):
+    name = "uzbekistan_shop"
 
     # ExportFileSpider
     export_outputs = {
         "main": {
-            "name": "uzbekistan_completed_deals",
+            "name": "uzbekistan_shop",
             "formats": ["csv"],
             "item_filter": None,
         }

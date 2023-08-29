@@ -4,18 +4,18 @@ from generic_scrapy.filters import UzbekistanDealFilter, UzbekistanDealTradeFilt
 from generic_scrapy.spiders.uzbekistan_base_spider import UzbekistanBaseSpider
 
 
-class UzbekistanDeals(UzbekistanBaseSpider):
-    name = "uzbekistan_deals"
+class UzbekistanEtender(UzbekistanBaseSpider):
+    name = "uzbekistan_etender"
 
     # ExportFileSpider
     export_outputs = {
         "main": {
-            "name": "uzbekistan_deals",
+            "name": "uzbekistan_etender",
             "formats": ["csv"],
             "item_filter": UzbekistanDealFilter,
         },
         "secondary": {
-            "name": "uzbekistan_deals_trades",
+            "name": "uzbekistan_etender_trades",
             "formats": ["csv"],
             "item_filter": UzbekistanDealTradeFilter,
         },
