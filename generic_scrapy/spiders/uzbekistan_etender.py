@@ -38,7 +38,7 @@ class UzbekistanEtender(UzbekistanBaseSpider):
 
     def parse_trade(self, response, **kwargs):
         data = response.json()
-        data["procurement_method"] = 'Electronic tender' if data["type_name"] == 'Тендер' else 'Electronic competition'
+        data["procurement_method"] = "Electronic tender" if data["type_name"] == "Тендер" else "Electronic competition"
         yield data
 
     def build_filters(self, from_parameter, to_parameter, **kwargs):
