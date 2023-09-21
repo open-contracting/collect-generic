@@ -98,6 +98,8 @@ class BaseSpider(scrapy.Spider):
             except ValueError as e:
                 raise UsageError(f"spider argument `from_date`: invalid date value: {e}")
 
+            if not spider.until_date:
+                spider.until_date = datetime.utcnow()
             try:
                 if isinstance(spider.until_date, str):
                     spider.until_date = datetime.strptime(spider.until_date, spider.date_format)

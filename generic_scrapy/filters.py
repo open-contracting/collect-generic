@@ -28,3 +28,19 @@ class UzbekistanDealTradeFilter:
 
     def accepts(self, item):
         return "deal_id" not in item
+
+
+class PolandContractorFilter:
+    def __init__(self, feed_options):
+        self.feed_options = feed_options
+
+    def accepts(self, item):
+        return "contractorName" in item
+
+
+class PolandNoticeFilter:
+    def __init__(self, feed_options):
+        self.feed_options = feed_options
+
+    def accepts(self, item):
+        return "contractorName" not in item
