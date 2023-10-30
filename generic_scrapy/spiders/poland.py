@@ -1,5 +1,6 @@
 import scrapy
 from scrapy import Selector
+from scrapy.exceptions import UsageError
 
 from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 from generic_scrapy.filters import PolandContractorFilter, PolandNoticeFilter
@@ -44,8 +45,17 @@ class Poland(ExportFileSpider):
     date_required = True
     default_from_date = "2021-01-01T00:00:00"
 
+    @classmethod
+    def from_crawler(cls, crawler, notice_type=None, *args, **kwargs):
+        spider = super().from_crawler(crawler, notice_type=notice_type, *args, **kwargs)
+        if notice_type and spider.notice_type not in spider.notice_types:
+            raise UsageError(f"spider argument `notice_type`: {spider.system!r} not recognized")
+        return spider
+
     def start_requests(self):
         for notice_type in self.notice_types:
+            if self.notice_type and notice_type != self.notice_type:
+                continue
             url = (
                 f"{self.base_url}?NoticeType={notice_type}&PublicationDateFrom={self.from_date}"
                 f"&PublicationDateTo={self.until_date}&PageSize=100"
@@ -74,8 +84,9 @@ class Poland(ExportFileSpider):
             full_item = item | html_dict
             if item["contractors"]:
                 for contractor in item["contractors"]:
-                    contractor["tenderId"] = item["tenderId"]
-                    yield contractor
+                    if contractor["contractorName"]:
+                        contractor["tenderId"] = item["tenderId"]
+                        yield contractor
             full_item.pop("htmlBody")
             full_item.pop("contractors")
             yield full_item
