@@ -54,8 +54,7 @@ class ExportFileSpider(BaseSpider):
                     feeds[file_path]["item_filter"] = item_filter
                 if "overwrite" in cls.export_outputs[entry]:
                     feeds[file_path]["overwrite"] = cls.export_outputs[entry]["overwrite"]
-        custom_settings = {"FEEDS": feeds}
-        settings.setdict(custom_settings, priority="spider")
+        settings.set("FEEDS", feeds, priority="spider")
 
     @classmethod
     def get_file_store_directory(cls):

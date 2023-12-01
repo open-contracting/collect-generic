@@ -19,7 +19,7 @@ charset-normalizer==3.2.0
     # via requests
 constantly==15.1.0
     # via twisted
-cryptography==41.0.4
+cryptography==41.0.6
     # via
     #   pyopenssl
     #   scrapy
@@ -91,7 +91,7 @@ requests==2.31.0
     #   tldextract
 requests-file==1.5.1
     # via tldextract
-scrapy==2.10.0
+scrapy==2.11.0
     # via -r requirements.in
 service-identity==23.1.0
     # via scrapy
