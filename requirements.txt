@@ -91,7 +91,7 @@ requests==2.31.0
     #   tldextract
 requests-file==1.5.1
     # via tldextract
-scrapy==2.11.0
+scrapy==2.11.1
     # via -r requirements.in
 service-identity==23.1.0
     # via scrapy
@@ -102,7 +102,7 @@ six==1.16.0
     #   requests-file
 tldextract==3.4.4
     # via scrapy
-twisted==22.10.0
+twisted==23.10.0
     # via scrapy
 typing-extensions==4.7.1
     # via twisted

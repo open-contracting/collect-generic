@@ -208,7 +208,7 @@ requests-file==1.5.1
     # via
     #   -r requirements.txt
     #   tldextract
-scrapy==2.11.0
+scrapy==2.11.1
     # via -r requirements.txt
 service-identity==23.1.0
     # via
@@ -232,7 +232,7 @@ tomli==2.0.1
     #   pip-tools
     #   pyproject-hooks
     #   pytest
-twisted==22.10.0
+twisted==23.10.0
     # via
     #   -r requirements.txt
     #   scrapy
