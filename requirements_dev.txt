@@ -14,7 +14,7 @@ automat==22.10.0
     # via
     #   -r requirements.txt
     #   twisted
-black==23.7.0
+black==24.3.0
     # via -r requirements_dev.in
 build==0.10.0
     # via pip-tools
