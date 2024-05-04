@@ -222,7 +222,7 @@ tldextract==3.4.4
     # via
     #   -r requirements.txt
     #   scrapy
-twisted==23.10.0
+twisted==24.3.0
     # via
     #   -r requirements.txt
     #   scrapy
