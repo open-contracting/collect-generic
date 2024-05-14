@@ -58,6 +58,10 @@ cssselect==1.2.0
     #   -r requirements.txt
     #   parsel
     #   scrapy
+defusedxml==0.7.1
+    # via
+    #   -r requirements.txt
+    #   scrapy
 distlib==0.3.7
     # via virtualenv
 docopt==0.6.2
@@ -206,7 +210,7 @@ requests-file==1.5.1
     # via
     #   -r requirements.txt
     #   tldextract
-scrapy==2.11.1
+scrapy==2.11.2
     # via -r requirements.txt
 service-identity==24.1.0
     # via

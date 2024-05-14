@@ -28,6 +28,8 @@ cssselect==1.2.0
     # via
     #   parsel
     #   scrapy
+defusedxml==0.7.1
+    # via scrapy
 filelock==3.12.2
     # via tldextract
 hyperlink==21.0.0
@@ -91,7 +93,7 @@ requests==2.31.0
     #   tldextract
 requests-file==1.5.1
     # via tldextract
-scrapy==2.11.1
+scrapy==2.11.2
     # via -r requirements.in
 service-identity==24.1.0
     # via scrapy
