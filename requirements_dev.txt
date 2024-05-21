@@ -200,7 +200,7 @@ queuelib==1.6.2
     # via
     #   -r requirements.txt
     #   scrapy
-requests==2.31.0
+requests==2.32.0
     # via
     #   -r requirements.txt
     #   coveralls
