@@ -21,7 +21,6 @@ repos:
       - id: pip-compile
         name: pip-compile requirements.in
         files: ^requirements\.(in|txt)$
-        args: [requirements.in]
       - id: pip-compile
         name: pip-compile requirements_dev.in
         files: ^requirements(_dev)?\.(in|txt)$
