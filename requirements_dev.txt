@@ -85,7 +85,7 @@ idna==3.7
     #   hyperlink
     #   requests
     #   tldextract
-incremental==22.10.0
+incremental==24.7.2
     # via
     #   -r requirements.txt
     #   twisted
@@ -226,7 +226,7 @@ tldextract==3.4.4
     # via
     #   -r requirements.txt
     #   scrapy
-twisted==24.3.0
+twisted==24.7.0rc1
     # via
     #   -r requirements.txt
     #   scrapy
