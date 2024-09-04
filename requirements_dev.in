@@ -1,9 +1,7 @@
 -r requirements.txt
-black
 coverage[toml]
 coveralls
-flake8
-isort
 pre-commit
 pytest
 pytest-cov
+ruff

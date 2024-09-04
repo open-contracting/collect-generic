@@ -46,8 +46,8 @@ class Poland(ExportFileSpider):
     default_from_date = "2021-01-01T00:00:00"
 
     @classmethod
-    def from_crawler(cls, crawler, notice_type=None, *args, **kwargs):
-        spider = super().from_crawler(crawler, notice_type=notice_type, *args, **kwargs)
+    def from_crawler(cls, crawler, *args, notice_type=None, **kwargs):
+        spider = super().from_crawler(crawler, *args, notice_type=notice_type, **kwargs)
         if notice_type and spider.notice_type not in spider.notice_types:
             raise UsageError(f"spider argument `notice_type`: {spider.system!r} not recognized")
         return spider

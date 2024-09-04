@@ -40,7 +40,7 @@ class ExportFileSpider(BaseSpider):
     def update_settings(cls, settings):
         super().update_settings(settings)
         feeds = {}
-        for entry in cls.export_outputs.keys():
+        for entry in cls.export_outputs:
             item_filter = cls.export_outputs[entry]["item_filter"]
             file_name = cls.export_outputs[entry]["name"]
             for export_format in cls.export_outputs[entry]["formats"]:

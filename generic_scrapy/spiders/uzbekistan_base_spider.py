@@ -24,8 +24,7 @@ class UzbekistanBaseSpider(ExportFileSpider):
         yield request
 
     def parse(self, response, **kwargs):
-        for item in response.json():
-            yield item
+        yield from response.json()
 
     def parse_list(self, response):
         yield from self.parse_callback(response)
