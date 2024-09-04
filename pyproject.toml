@@ -21,7 +21,7 @@ ignore = [
   "D203", "D212",  # ignore incompatible rules
   "D200",  # documentation preferences
   "C901", "PLR0912",  # complexity preferences
-  "D",  # docstrings
+  "D1",  # docstrings
   "PTH",  # pathlib
   "ARG002",  # Scrapy keyword arguments
   "ERA001",  # commented Scrapy settings

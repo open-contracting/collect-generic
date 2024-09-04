@@ -6,6 +6,8 @@ from scrapy.exceptions import UsageError
 
 class BaseSpider(scrapy.Spider):
     """
+    The base class for this project's spiders.
+
     With respect to the data's source:
 
     -  If the source can support ``from_date`` and ``until_date`` spider arguments:
@@ -46,11 +48,12 @@ class BaseSpider(scrapy.Spider):
         **kwargs,
     ):
         """
+        Initialize the spider.
+
         :param from_date: the date from which to download data (see :ref:`spider-arguments`)
         :param until_date: the date until which to download data (see :ref:`spider-arguments`)
         :param crawl_time: override the crawl's start time
         """
-
         super().__init__(*args, **kwargs)
 
         # https://docs.scrapy.org/en/latest/topics/spiders.html#spider-arguments
@@ -111,6 +114,6 @@ class BaseSpider(scrapy.Spider):
 
     def parse_date_argument(self, date):
         """
-        Returns the date argument as a datetime object.
+        Return the date argument as a datetime object.
         """
         return datetime.datetime.strptime(date, self.date_format).replace(tzinfo=datetime.timezone.utc)

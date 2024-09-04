@@ -6,8 +6,7 @@ from generic_scrapy.settings import FILES_STORE
 
 class ExportFileSpider(BaseSpider):
     """
-    This class makes it easy to store the results from a spider into an individual CSV, JSON or both format files using
-    Scrapy's CSV and JSON Item Exporters.
+    Store items in a CSV file, JSON file or both, using Scrapy's CSV and JSON Item Exporters.
 
     #. Inherit from ``ExportFileSpider``
     #. Define a ``export_outputs`` dict, with the following structure:
