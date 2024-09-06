@@ -105,6 +105,8 @@ six==1.16.0
     #   requests-file
 tldextract==3.4.4
     # via scrapy
+tomli==2.0.1
+    # via incremental
 twisted==24.7.0rc1
     # via scrapy
 typing-extensions==4.7.1
