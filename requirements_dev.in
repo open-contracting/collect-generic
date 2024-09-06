@@ -1,7 +1,4 @@
 -r requirements.txt
 coverage[toml]
-coveralls
-pre-commit
 pytest
 pytest-cov
-ruff

@@ -18,8 +18,6 @@ cffi==1.15.1
     # via
     #   -r requirements.txt
     #   cryptography
-cfgv==3.4.0
-    # via pre-commit
 charset-normalizer==3.2.0
     # via
     #   -r requirements.txt
@@ -31,10 +29,7 @@ constantly==15.1.0
 coverage==6.5.0
     # via
     #   -r requirements_dev.in
-    #   coveralls
     #   pytest-cov
-coveralls==3.3.1
-    # via -r requirements_dev.in
 cryptography==42.0.4
     # via
     #   -r requirements.txt
@@ -50,21 +45,14 @@ defusedxml==0.7.1
     # via
     #   -r requirements.txt
     #   scrapy
-distlib==0.3.7
-    # via virtualenv
-docopt==0.6.2
-    # via coveralls
 filelock==3.12.2
     # via
     #   -r requirements.txt
     #   tldextract
-    #   virtualenv
 hyperlink==21.0.0
     # via
     #   -r requirements.txt
     #   twisted
-identify==2.5.27
-    # via pre-commit
 idna==3.7
     # via
     #   -r requirements.txt
@@ -96,8 +84,6 @@ lxml==4.9.3
     #   -r requirements.txt
     #   parsel
     #   scrapy
-nodeenv==1.8.0
-    # via pre-commit
 numpy==1.25.2
     # via
     #   -r requirements.txt
@@ -115,12 +101,8 @@ parsel==1.8.1
     #   -r requirements.txt
     #   itemloaders
     #   scrapy
-platformdirs==3.10.0
-    # via virtualenv
 pluggy==1.2.0
     # via pytest
-pre-commit==3.3.3
-    # via -r requirements_dev.in
 protego==0.3.0
     # via
     #   -r requirements.txt
@@ -160,8 +142,6 @@ pytz==2023.3
     # via
     #   -r requirements.txt
     #   pandas
-pyyaml==6.0.1
-    # via pre-commit
 queuelib==1.6.2
     # via
     #   -r requirements.txt
@@ -169,15 +149,12 @@ queuelib==1.6.2
 requests==2.32.3
     # via
     #   -r requirements.txt
-    #   coveralls
     #   requests-file
     #   tldextract
 requests-file==1.5.1
     # via
     #   -r requirements.txt
     #   tldextract
-ruff==0.6.3
-    # via -r requirements_dev.in
 scrapy==2.11.2
     # via -r requirements.txt
 service-identity==24.1.0
@@ -188,7 +165,6 @@ setuptools==74.1.1
     # via
     #   -r requirements.txt
     #   incremental
-    #   nodeenv
     #   scrapy
     #   zope-interface
 six==1.16.0
@@ -217,8 +193,6 @@ urllib3==2.2.2
     # via
     #   -r requirements.txt
     #   requests
-virtualenv==20.24.3
-    # via pre-commit
 w3lib==2.1.2
     # via
     #   -r requirements.txt
