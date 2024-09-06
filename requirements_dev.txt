@@ -177,6 +177,8 @@ tldextract==3.4.4
     # via
     #   -r requirements.txt
     #   scrapy
+tomli==2.0.1
+    # via incremental
 twisted==24.7.0rc1
     # via
     #   -r requirements.txt
