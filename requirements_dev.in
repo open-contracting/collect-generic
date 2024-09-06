@@ -1,4 +1,0 @@
--r requirements.txt
-coverage[toml]
-pytest
-pytest-cov
