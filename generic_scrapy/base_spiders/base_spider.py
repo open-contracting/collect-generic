@@ -113,7 +113,5 @@ class BaseSpider(scrapy.Spider):
         return spider
 
     def parse_date_argument(self, date):
-        """
-        Return the date argument as a datetime object.
-        """
+        """Return the date argument as a datetime object."""
         return datetime.datetime.strptime(date, self.date_format).replace(tzinfo=datetime.timezone.utc)
