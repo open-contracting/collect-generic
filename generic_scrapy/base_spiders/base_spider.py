@@ -3,6 +3,13 @@ import datetime
 import scrapy
 from scrapy.exceptions import UsageError
 
+VALID_DATE_FORMATS = {
+    "date": "%Y-%m-%d",
+    "datetime": "%Y-%m-%dT%H:%M:%S",
+    "year": "%Y",
+    "year-month": "%Y-%m",
+}
+
 
 class BaseSpider(scrapy.Spider):
     """
@@ -26,13 +33,6 @@ class BaseSpider(scrapy.Spider):
         the current time.
 
     """
-
-    VALID_DATE_FORMATS = {
-        "date": "%Y-%m-%d",
-        "datetime": "%Y-%m-%dT%H:%M:%S",
-        "year": "%Y",
-        "year-month": "%Y-%m",
-    }
 
     # Regarding the data source.
     date_format = "datetime"
@@ -63,7 +63,7 @@ class BaseSpider(scrapy.Spider):
         self.from_date = from_date
         self.until_date = until_date
 
-        self.date_format = self.VALID_DATE_FORMATS[self.date_format]
+        self.date_format = VALID_DATE_FORMATS[self.date_format]
 
         # Related to incremental crawls.
         if crawl_directory:

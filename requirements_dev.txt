@@ -78,17 +78,11 @@ lxml==4.9.3
     #   -r requirements.txt
     #   parsel
     #   scrapy
-numpy==1.25.2
-    # via
-    #   -r requirements.txt
-    #   pandas
 packaging==23.1
     # via
     #   -r requirements.txt
     #   parsel
     #   scrapy
-pandas==2.0.3
-    # via -r requirements.txt
 parsel==1.8.1
     # via
     #   -r requirements.txt
@@ -119,14 +113,6 @@ pyopenssl==24.2.1
     # via
     #   -r requirements.txt
     #   scrapy
-python-dateutil==2.8.2
-    # via
-    #   -r requirements.txt
-    #   pandas
-pytz==2023.3
-    # via
-    #   -r requirements.txt
-    #   pandas
 queuelib==1.6.2
     # via
     #   -r requirements.txt
@@ -156,7 +142,6 @@ six==1.16.0
     # via
     #   -r requirements.txt
     #   automat
-    #   python-dateutil
     #   requests-file
 tldextract==3.4.4
     # via
@@ -174,10 +159,6 @@ typing-extensions==4.7.1
     # via
     #   -r requirements.txt
     #   twisted
-tzdata==2023.3
-    # via
-    #   -r requirements.txt
-    #   pandas
 urllib3==2.2.2
     # via
     #   -r requirements.txt

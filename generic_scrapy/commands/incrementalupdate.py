@@ -1,11 +1,11 @@
+import csv
 import os.path
 from datetime import datetime, timedelta
 
-import pandas as pd
 from scrapy.commands import ScrapyCommand
 from scrapy.exceptions import UsageError
 
-from generic_scrapy.base_spiders.base_spider import BaseSpider
+from generic_scrapy.base_spiders.base_spider import VALID_DATE_FORMATS
 
 
 class IncrementalUpdate(ScrapyCommand):
@@ -24,7 +24,7 @@ class IncrementalUpdate(ScrapyCommand):
         parser.add_argument(
             "--date_field_name",
             type=str,
-            help="The data field to use for checking for the number of items downloaded the last time.",
+            help="The date field to use for checking for the number of items downloaded the last time.",
         )
         parser.add_argument(
             "--crawl_directory",
@@ -50,12 +50,12 @@ class IncrementalUpdate(ScrapyCommand):
 
         max_date = None
         if opts.date_field_name:
-            directory = spidercls.get_file_store_directory()
-            file_name = f"{spidercls.export_outputs['main']['name']}.csv"
-            max_date = pd.read_csv(os.path.join(directory, file_name))[opts.date_field_name].agg(["max"])["max"]
-            max_date = datetime.strptime(max_date, BaseSpider.VALID_DATE_FORMATS["datetime"]).replace(
-                tzinfo=datetime.timezone.utc
-            ) + timedelta(seconds=1)
+            with open(
+                os.path.join(spidercls.get_file_store_directory(), f"{spidercls.export_outputs['main']['name']}.csv")
+            ) as f:
+                max_date = datetime.strptime(
+                    max(row[opts.date_field_name] for row in csv.DictReader(f)), VALID_DATE_FORMATS["datetime"]
+                ).replace(tzinfo=datetime.timezone.utc) + timedelta(seconds=1)
 
         self.crawler_process.crawl(spidercls, from_date=max_date, crawl_directory=opts.crawl_directory)
         self.crawler_process.start()
