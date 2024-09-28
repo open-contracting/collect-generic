@@ -68,8 +68,7 @@ class Poland(ExportFileSpider):
             html_dict = {}
             field_name = None
             last_object_id = item["objectId"]
-            html_part = Selector(text=item["htmlBody"]).css(".mb-0")
-            for element in html_part:
+            for element in Selector(text=item["htmlBody"]).css(".mb-0"):
                 value = element.xpath("text()").get(default="").strip()
                 # If the element is a field name
                 if "<h3" in element.get():
