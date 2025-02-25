@@ -26,7 +26,7 @@ constantly==15.1.0
     # via
     #   -r requirements.txt
     #   twisted
-cryptography==43.0.1
+cryptography==44.0.1
     # via
     #   -r requirements.txt
     #   pyopenssl
@@ -109,7 +109,7 @@ pydispatcher==2.0.7
     # via
     #   -r requirements.txt
     #   scrapy
-pyopenssl==24.2.1
+pyopenssl==25.0.0
     # via
     #   -r requirements.txt
     #   scrapy
@@ -155,9 +155,10 @@ twisted==24.7.0rc1
     # via
     #   -r requirements.txt
     #   scrapy
-typing-extensions==4.7.1
+typing-extensions==4.12.2
     # via
     #   -r requirements.txt
+    #   pyopenssl
     #   twisted
 urllib3==2.2.2
     # via
