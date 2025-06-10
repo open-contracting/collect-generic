@@ -117,7 +117,7 @@ queuelib==1.6.2
     # via
     #   -r requirements.txt
     #   scrapy
-requests==2.32.3
+requests==2.32.4
     # via
     #   -r requirements.txt
     #   requests-file
