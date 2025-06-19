@@ -99,7 +99,7 @@ typing-extensions==4.12.2
     # via
     #   pyopenssl
     #   twisted
-urllib3==2.2.2
+urllib3==2.5.0
     # via requests
 w3lib==2.1.2
     # via
