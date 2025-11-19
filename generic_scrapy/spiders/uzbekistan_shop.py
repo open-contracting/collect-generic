@@ -19,7 +19,7 @@ class UzbekistanShop(UzbekistanBaseSpider):
     # BaseSpider
     default_from_date = "2022-01-01T00:00:00"
 
-    def start_requests(self):
+    async def start(self):
         for national in [1, 0]:
             filters = self.build_filters(
                 0,

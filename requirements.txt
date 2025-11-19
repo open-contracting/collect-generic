@@ -81,10 +81,14 @@ requests==2.32.4
     #   tldextract
 requests-file==1.5.1
     # via tldextract
-scrapy==2.11.2
+scrapy==2.13.4
     # via -r requirements.in
 service-identity==24.1.0
     # via scrapy
+setuptools==80.9.0
+    # via
+    #   incremental
+    #   zope-interface
 six==1.16.0
     # via
     #   automat

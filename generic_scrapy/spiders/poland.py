@@ -52,7 +52,7 @@ class Poland(ExportFileSpider):
             raise UsageError(f"spider argument `notice_type`: {spider.system!r} not recognized")
         return spider
 
-    def start_requests(self):
+    async def start(self):
         for notice_type in self.notice_types:
             if self.notice_type and notice_type != self.notice_type:
                 continue

@@ -16,7 +16,7 @@ class UzbekistanBaseSpider(ExportFileSpider):
         super().__init__(*args, **kwargs)
         self.parse_callback = getattr(self, self.parse_callback)
 
-    def start_requests(self):
+    async def start(self):
         request = self.build_request(
             self.build_filters(0, self.sample if self.sample else self.page_size),
             callback=self.parse_list,
