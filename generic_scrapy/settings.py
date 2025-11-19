@@ -13,29 +13,19 @@ BOT_NAME = "generic_scrapy"
 SPIDER_MODULES = ["generic_scrapy.spiders"]
 NEWSPIDER_MODULE = "generic_scrapy.spiders"
 
+ADDONS = {}
+
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 USER_AGENT = "generic_scrapy (+http://www.open-contracting.org)"
 
 # Obey robots.txt rules
-ROBOTSTXT_OBEY = False
+ROBOTSTXT_OBEY = False  # template True
 
-LOG_FORMATTER = "generic_scrapy.log_formatter.LogFormatter"
-FILES_STORE = os.getenv("FILES_STORE", "data")
-FEED_EXPORTERS = {
-    "csv": "generic_scrapy.exporters.HeadlessCsvItemExporter",
-}
-
-# Configure maximum concurrent requests performed by Scrapy (default: 16)
-CONCURRENT_REQUESTS = 32
-
-# Configure a delay for requests for the same website (default: 0)
-# See https://docs.scrapy.org/en/latest/topics/settings.html#download-delay
-# See also autothrottle settings and docs
-# DOWNLOAD_DELAY = 3
-# The download delay setting will honor only one of:
-# CONCURRENT_REQUESTS_PER_DOMAIN = 16
-# CONCURRENT_REQUESTS_PER_IP = 16
+# Concurrency and throttling settings
+CONCURRENT_REQUESTS = 32  # default 16
+# CONCURRENT_REQUESTS_PER_DOMAIN = 1
+# DOWNLOAD_DELAY = 1
 
 # Disable cookies (enabled by default)
 # COOKIES_ENABLED = False
@@ -95,8 +85,22 @@ CONCURRENT_REQUESTS = 32
 # HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 
 # Set settings whose default value is deprecated to a future-proof value
-REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
-TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
 
+
+# Project-specific Scrapy configuration
+
+# https://docs.scrapy.org/en/latest/topics/settings.html#log-formatter
+LOG_FORMATTER = "generic_scrapy.log_formatter.LogFormatter"
+
+# https://docs.scrapy.org/en/latest/topics/commands.html#std-setting-COMMANDS_MODULE
 COMMANDS_MODULE = "generic_scrapy.commands"
+
+FEED_EXPORTERS = {
+    "csv": "generic_scrapy.exporters.HeadlessCsvItemExporter",
+}
+
+
+# Project configuration
+
+FILES_STORE = os.getenv("FILES_STORE", "data")
