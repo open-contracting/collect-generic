@@ -85,10 +85,6 @@ scrapy==2.13.4
     # via -r requirements.in
 service-identity==24.1.0
     # via scrapy
-setuptools==80.9.0
-    # via
-    #   incremental
-    #   zope-interface
 six==1.16.0
     # via
     #   automat
@@ -103,7 +99,7 @@ typing-extensions==4.12.2
     # via
     #   pyopenssl
     #   twisted
-urllib3==2.5.0
+urllib3==2.6.0
     # via requests
 w3lib==2.1.2
     # via
