@@ -154,7 +154,7 @@ typing-extensions==4.12.2
     #   -r requirements.txt
     #   pyopenssl
     #   twisted
-urllib3==2.6.0
+urllib3==2.6.3
     # via
     #   -r requirements.txt
     #   requests
