@@ -18,7 +18,7 @@ class UzbekistanBaseSpider(ExportFileSpider):
 
     async def start(self):
         request = self.build_request(
-            self.build_filters(0, self.sample if self.sample else self.page_size),
+            self.build_filters(0, self.sample or self.page_size),
             callback=self.parse_list,
         )
         yield request
@@ -48,7 +48,7 @@ class UzbekistanBaseSpider(ExportFileSpider):
             method="POST",
             body=json.dumps(filters),
             headers={"Content-Type": "application/json"},
-            callback=callback if callback else self.parse,
+            callback=callback or self.parse,
         )
 
     def build_filters(self, from_parameter, to_parameter, **kwargs):
