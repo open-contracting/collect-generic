@@ -132,6 +132,11 @@ service-identity==24.1.0
     # via
     #   -r requirements.txt
     #   scrapy
+setuptools==82.0.0
+    # via
+    #   -r requirements.txt
+    #   incremental
+    #   zope-interface
 six==1.16.0
     # via
     #   -r requirements.txt
