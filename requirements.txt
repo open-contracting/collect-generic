@@ -9,13 +9,13 @@ automat==22.10.0
     # via twisted
 certifi==2024.7.4
     # via requests
-cffi==1.15.1
+cffi==2.0.0
     # via cryptography
 charset-normalizer==3.2.0
     # via requests
 constantly==15.1.0
     # via twisted
-cryptography==44.0.1
+cryptography==46.0.5
     # via
     #   pyopenssl
     #   scrapy
@@ -71,7 +71,7 @@ pycparser==2.21
     # via cffi
 pydispatcher==2.0.7
     # via scrapy
-pyopenssl==25.0.0
+pyopenssl==25.3.0
     # via scrapy
 queuelib==1.6.2
     # via scrapy
@@ -99,8 +99,9 @@ tomli==2.0.1
     # via incremental
 twisted==24.7.0rc1
     # via scrapy
-typing-extensions==4.12.2
+typing-extensions==4.15.0
     # via
+    #   cryptography
     #   pyopenssl
     #   twisted
 urllib3==2.6.3
