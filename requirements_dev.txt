@@ -126,17 +126,12 @@ requests-file==1.5.1
     # via
     #   -r requirements.txt
     #   tldextract
-scrapy==2.13.4
+scrapy==2.14.2
     # via -r requirements.txt
 service-identity==24.1.0
     # via
     #   -r requirements.txt
     #   scrapy
-setuptools==82.0.0
-    # via
-    #   -r requirements.txt
-    #   incremental
-    #   zope-interface
 six==1.16.0
     # via
     #   -r requirements.txt
