@@ -75,7 +75,7 @@ pyopenssl==26.0.0
     # via scrapy
 queuelib==1.6.2
     # via scrapy
-requests==2.32.4
+requests==2.33.0
     # via
     #   requests-file
     #   tldextract
