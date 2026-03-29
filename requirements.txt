@@ -15,7 +15,7 @@ charset-normalizer==3.2.0
     # via requests
 constantly==15.1.0
     # via twisted
-cryptography==46.0.5
+cryptography==46.0.6
     # via
     #   pyopenssl
     #   scrapy
