@@ -15,7 +15,7 @@ charset-normalizer==3.2.0
     # via requests
 constantly==15.1.0
     # via twisted
-cryptography==46.0.6
+cryptography==46.0.7
     # via
     #   pyopenssl
     #   scrapy
@@ -85,10 +85,6 @@ scrapy==2.14.2
     # via -r requirements.in
 service-identity==24.1.0
     # via scrapy
-setuptools==82.0.1
-    # via
-    #   incremental
-    #   zope-interface
 six==1.16.0
     # via
     #   automat
