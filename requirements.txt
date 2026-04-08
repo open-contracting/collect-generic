@@ -61,11 +61,11 @@ parsel==1.8.1
     #   scrapy
 protego==0.3.0
     # via scrapy
-pyasn1==0.5.0
+pyasn1==0.6.3
     # via
     #   pyasn1-modules
     #   service-identity
-pyasn1-modules==0.3.0
+pyasn1-modules==0.4.2
     # via service-identity
 pycparser==2.21
     # via cffi
@@ -85,6 +85,10 @@ scrapy==2.14.2
     # via -r requirements.in
 service-identity==24.1.0
     # via scrapy
+setuptools==82.0.1
+    # via
+    #   incremental
+    #   zope-interface
 six==1.16.0
     # via
     #   automat

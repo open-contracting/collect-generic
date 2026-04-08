@@ -92,12 +92,12 @@ protego==0.3.0
     # via
     #   -r requirements.txt
     #   scrapy
-pyasn1==0.5.0
+pyasn1==0.6.3
     # via
     #   -r requirements.txt
     #   pyasn1-modules
     #   service-identity
-pyasn1-modules==0.3.0
+pyasn1-modules==0.4.2
     # via
     #   -r requirements.txt
     #   service-identity
@@ -132,6 +132,11 @@ service-identity==24.1.0
     # via
     #   -r requirements.txt
     #   scrapy
+setuptools==82.0.1
+    # via
+    #   -r requirements.txt
+    #   incremental
+    #   zope-interface
 six==1.16.0
     # via
     #   -r requirements.txt
