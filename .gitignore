@@ -7,3 +7,4 @@ venv/
 /build
 /data
 /debug.log
+/*.csv
