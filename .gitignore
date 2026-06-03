@@ -8,3 +8,4 @@ venv/
 /data
 /debug.log
 /*.csv
+.scrapy/

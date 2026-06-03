@@ -61,8 +61,9 @@ def _expand_pkt(pkt):
 class PolandPzp(ScrapyCommand):
     def short_desc(self):
         return (
-            "Aggregate PZP article counts from the latest kio_orzeczenia and uzp_kontrole crawls. "
-            "Writes pzp_article_counts.csv, pzp_subclause_counts.csv and uzp_category_breakdown.csv."
+            "Aggregate PZP article and CPV counts from the latest kio_orzeczenia, uzp_kontrole and "
+            "(optional) poland_cpv crawls. Writes pzp_article_counts.csv, pzp_subclause_counts.csv, "
+            "uzp_category_breakdown.csv and (when poland_cpv is present) cpv_counts.csv."
         )
 
     def syntax(self):
@@ -86,11 +87,17 @@ class PolandPzp(ScrapyCommand):
             type=str,
             help="uzp_kontrole crawl_directory (default: latest under FILES_STORE/uzp_kontrole/)",
         )
+        parser.add_argument(
+            "--cpv-crawl",
+            type=str,
+            help="poland_cpv crawl_directory (default: latest under FILES_STORE/poland_cpv/)",
+        )
 
     def run(self, _args, opts):
         files_store = Path(self.settings["FILES_STORE"])
         kio_crawl = self._resolve_crawl(files_store, "kio_orzeczenia", opts.kio_crawl)
         uzp_crawl = self._resolve_crawl(files_store, "uzp_kontrole", opts.uzp_crawl)
+        cpv_crawl = self._resolve_crawl(files_store, "poland_cpv", opts.cpv_crawl)
         if not kio_crawl and not uzp_crawl:
             raise UsageError(f"No crawls found under {files_store}/kio_orzeczenia/ or {files_store}/uzp_kontrole/")
 
@@ -143,6 +150,23 @@ class PolandPzp(ScrapyCommand):
         logger.info("Wrote %s (%d article/source rows)", articles_path, len(article_counts))
         logger.info("Wrote %s (%d sub-clause/source rows)", subclauses_path, len(subclause_counts))
         logger.info("Wrote %s (%d categories)", category_path, len(category_counts))
+
+        if cpv_crawl:
+            cpv_path = output_dir / "cpv_counts.csv"
+            cpv_counts, cpv_labels, cpv_totals = _aggregate_cpv(cpv_crawl / "joined.json")
+            with cpv_path.open("w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["cpv_code", "cpv_label", "source", "count", "share_within_source"])
+                for (code, source), count in sorted(cpv_counts.items(), key=_article_sort_key):
+                    share = count / cpv_totals[source] if cpv_totals[source] else 0
+                    writer.writerow([code, cpv_labels.get(code, ""), source, count, f"{share:.4f}"])
+            logger.info(
+                "Wrote %s (%d cpv/source rows; KIO records with CPV: %d, UZP records with CPV: %d)",
+                cpv_path,
+                len(cpv_counts),
+                cpv_totals["KIO"],
+                cpv_totals["UZP"],
+            )
 
     @staticmethod
     def _resolve_crawl(files_store, spider_name, override):
@@ -197,3 +221,42 @@ def _article_sort_key(kv):
 def _subclause_sort_key(kv):
     (article, ust, pkt, lit, source), count = kv
     return (-count, article, ust, pkt, lit, source)
+
+
+def _aggregate_cpv(path):
+    """
+    Read the poland_cpv ``joined.json`` and return ``(counts, labels, totals)``.
+
+    ``counts`` is ``Counter[(cpv_code, source)] -> int`` where each (source, record_id) pair
+    contributes once per distinct CPV — a ruling that cites three notices sharing a CPV still
+    increments that CPV by 1. ``labels`` keeps the human-readable CPV name (last seen wins).
+    ``totals`` is the count of distinct (source, record_id) pairs that resolved to at least one
+    CPV — the denominator for share-within-source.
+    """
+    counts: Counter[tuple[str, str]] = Counter()
+    labels: dict[str, str] = {}
+    seen_per_record: dict[tuple[str, object], set[str]] = {}
+    records_with_cpv: set[tuple[str, object]] = set()
+
+    for row in _read_jsonl(path):
+        record_key = (row["source"], row["record_id"])
+        cpv_codes = row.get("cpv_codes") or []
+        if not cpv_codes:
+            continue
+        records_with_cpv.add(record_key)
+        seen = seen_per_record.setdefault(record_key, set())
+        for entry in cpv_codes:
+            code = entry.get("code")
+            if not code:
+                continue
+            if entry.get("label"):
+                labels[code] = entry["label"]
+            if code in seen:
+                continue
+            seen.add(code)
+            counts[(code, row["source"])] += 1
+
+    totals = {"KIO": 0, "UZP": 0}
+    for source, _ in records_with_cpv:
+        totals[source] = totals.get(source, 0) + 1
+    return counts, labels, totals
