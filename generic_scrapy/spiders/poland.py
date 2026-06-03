@@ -36,6 +36,8 @@ class Poland(BaseSpider):
     TENDER_URL = "https://ezamowienia.gov.pl/mp-readmodels/api/Search/GetTender?id={id}"
     DOCUMENTS_URL = "https://ezamowienia.gov.pl/mp-readmodels/api/Search/GetTenderDocuments?tenderId={id}"
     DOWNLOAD_URL = "https://ezamowienia.gov.pl/mp-readmodels/api/Tender/DownloadDocument/{tender_id}/{doc_id}"
+    # An mp-readmodels/api/Tender/GetTenderNoticeDetails endpoint returns the same shape as Board/GetNoticeDetails.
+    # Board is used here because its sibling GetNoticeHtmlBody has no mp-readmodels equivalent.
     NOTICE_DETAILS_URL = "https://ezamowienia.gov.pl/mo-board/api/v1/Board/GetNoticeDetails?noticeNumber={n}"
     NOTICE_HTML_URL = "https://ezamowienia.gov.pl/mo-board/api/v1/Board/GetNoticeHtmlBody?noticeNumber={n}"
 
