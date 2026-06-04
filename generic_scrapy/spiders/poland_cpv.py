@@ -7,6 +7,7 @@ from urllib.parse import quote
 import scrapy
 from pdfminer.high_level import extract_text
 from pdfminer.pdfparser import PDFSyntaxError
+from scrapy.utils.asyncio import run_in_thread
 
 from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
@@ -108,9 +109,12 @@ class PolandCpv(ExportFileSpider):
             cb_kwargs={"source": source, "record_id": record_id, "label": label, "pdf_url": url},
         )
 
-    def parse_pdf(self, response, source, record_id, label, pdf_url):
+    async def parse_pdf(self, response, source, record_id, label, pdf_url):
+        # pdfminer is CPU-bound and would otherwise block the Scrapy event loop for ~0.5 s per
+        # PDF; scrapy.utils.asyncio.run_in_thread offloads it to the reactor thread pool so PDF
+        # extraction can overlap with the concurrent downloads driving more callbacks.
         try:
-            text = extract_text(io.BytesIO(response.body), maxpages=PDF_MAX_PAGES) or ""
+            text = (await run_in_thread(_extract_first_pages, response.body)) or ""
         except (PDFSyntaxError, ValueError, AssertionError) as exc:
             self.logger.warning("pdf parse failed: %s (%s)", pdf_url, exc)
             self.stats["pdf_error"] += 1
@@ -204,6 +208,11 @@ def _read_jsonl(path):
             line = raw_line.strip()
             if line:
                 yield json.loads(line)
+
+
+def _extract_first_pages(body):
+    """Run pdfminer in a worker thread (called via ``asyncio.to_thread``)."""
+    return extract_text(io.BytesIO(body), maxpages=PDF_MAX_PAGES)
 
 
 CPV_RE = re.compile(r"(\d{8}-\d)\s*(?:\(([^)]*)\))?")
