@@ -7,7 +7,6 @@ from urllib.parse import quote
 import scrapy
 from pdfminer.high_level import extract_text
 from pdfminer.pdfparser import PDFSyntaxError
-from scrapy.utils.asyncio import run_in_thread
 
 from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
@@ -109,12 +108,14 @@ class PolandCpv(ExportFileSpider):
             cb_kwargs={"source": source, "record_id": record_id, "label": label, "pdf_url": url},
         )
 
-    async def parse_pdf(self, response, source, record_id, label, pdf_url):
-        # pdfminer is CPU-bound and would otherwise block the Scrapy event loop for ~0.5 s per
-        # PDF; scrapy.utils.asyncio.run_in_thread offloads it to the reactor thread pool so PDF
-        # extraction can overlap with the concurrent downloads driving more callbacks.
+    def parse_pdf(self, response, source, record_id, label, pdf_url):
+        # pdfminer is pure Python and holds the GIL throughout extract_text, so
+        # scrapy.utils.asyncio.run_in_thread provided no measurable speedup (5 PDFs gather()ed
+        # ran in 3.7 s, same as 5 sequential sync calls). Keep parse_pdf synchronous — Scrapy
+        # tolerates a sub-second block of the reactor per response, and the network is the
+        # actual bottleneck on this server anyway.
         try:
-            text = (await run_in_thread(_extract_first_pages, response.body)) or ""
+            text = _extract_first_pages(response.body) or ""
         except (PDFSyntaxError, ValueError, AssertionError) as exc:
             self.logger.warning("pdf parse failed: %s (%s)", pdf_url, exc)
             self.stats["pdf_error"] += 1
