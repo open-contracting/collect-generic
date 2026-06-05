@@ -99,11 +99,15 @@ class PolandCpv(ExportFileSpider):
                     return
 
     def _pdf_request(self, url, source, record_id, label):
+        # dont_filter so that multiple UZP findings sharing the same attachment URL each get
+        # their own callback (and so their own joined.json row). HTTPCACHE still serves the PDF
+        # without an extra download.
         return scrapy.Request(
             url,
             callback=self.parse_pdf,
             errback=self.errback_pdf,
             cb_kwargs={"source": source, "record_id": record_id, "label": label, "pdf_url": url},
+            dont_filter=True,
         )
 
     def parse_pdf(self, response, source, record_id, label, pdf_url):
