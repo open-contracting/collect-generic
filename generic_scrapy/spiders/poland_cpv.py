@@ -1,19 +1,17 @@
-import io
 import json
 import re
 from pathlib import Path
 from urllib.parse import quote
 
+import pymupdf
 import scrapy
-from pdfminer.high_level import extract_text
-from pdfminer.pdfparser import PDFSyntaxError
 
 from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
 # Notice numbers in both KIO rulings and UZP findings are cited on the first few pages — KIO in
 # the opening "Sygn. akt" / "Uzasadnienie" block, UZP on the cover sheet of the Informacja PDF.
-# Capping pdfminer at this many pages keeps per-PDF extraction under ~1 s; full extraction takes
-# ~7 s on typical KIO PDFs, which doesn't scale to a 10k-record crawl.
+# We only extract the first PDF_MAX_PAGES pages so the spider stays fast (~20 ms per PDF with
+# PyMuPDF) and the regex never has to scan tens of pages of body text.
 PDF_MAX_PAGES = 5
 
 # BZP notice numbers in PDFs are usually written without the version suffix ("2023/BZP 00529765"),
@@ -109,14 +107,12 @@ class PolandCpv(ExportFileSpider):
         )
 
     def parse_pdf(self, response, source, record_id, label, pdf_url):
-        # pdfminer is pure Python and holds the GIL throughout extract_text, so
-        # scrapy.utils.asyncio.run_in_thread provided no measurable speedup (5 PDFs gather()ed
-        # ran in 3.7 s, same as 5 sequential sync calls). Keep parse_pdf synchronous — Scrapy
-        # tolerates a sub-second block of the reactor per response, and the network is the
-        # actual bottleneck on this server anyway.
+        # PyMuPDF extracts the first PDF_MAX_PAGES pages in ~20 ms per file, so this stays
+        # synchronous — Scrapy tolerates a sub-second block of the reactor per response and
+        # the network is the actual bottleneck against this server (~5 s/PDF).
         try:
             text = _extract_first_pages(response.body) or ""
-        except (PDFSyntaxError, ValueError, AssertionError) as exc:
+        except (pymupdf.FileDataError, RuntimeError, ValueError) as exc:
             self.logger.warning("pdf parse failed: %s (%s)", pdf_url, exc)
             self.stats["pdf_error"] += 1
             yield self._row(source, record_id, label, pdf_url, None, [], [], pdf_status="error")
@@ -212,8 +208,9 @@ def _read_jsonl(path):
 
 
 def _extract_first_pages(body):
-    """Run pdfminer in a worker thread (called via ``asyncio.to_thread``)."""
-    return extract_text(io.BytesIO(body), maxpages=PDF_MAX_PAGES)
+    """Extract the first ``PDF_MAX_PAGES`` pages of ``body`` using PyMuPDF."""
+    with pymupdf.open(stream=body, filetype="pdf") as doc:
+        return "\n".join(doc[i].get_text() for i in range(min(PDF_MAX_PAGES, doc.page_count)))
 
 
 CPV_RE = re.compile(r"(\d{8}-\d)\s*(?:\(([^)]*)\))?")

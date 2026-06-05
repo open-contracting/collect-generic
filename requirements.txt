@@ -11,14 +11,11 @@ certifi==2026.5.20
 cffi==2.0.0
     # via cryptography
 charset-normalizer==3.4.7
-    # via
-    #   pdfminer-six
-    #   requests
+    # via requests
 constantly==23.10.4
     # via twisted
 cryptography==48.0.0
     # via
-    #   pdfminer-six
     #   pyopenssl
     #   scrapy
     #   service-identity
@@ -62,8 +59,6 @@ parsel==1.11.0
     # via
     #   itemloaders
     #   scrapy
-pdfminer-six==20260107
-    # via -r requirements.in
 protego==0.6.0
     # via scrapy
 pyasn1==0.6.3
@@ -76,6 +71,8 @@ pycparser==3.0
     # via cffi
 pydispatcher==2.0.7
     # via scrapy
+pymupdf==1.27.2.3
+    # via -r requirements.in
 pyopenssl==26.2.0
     # via scrapy
 queuelib==1.9.0

@@ -20,7 +20,6 @@ cffi==2.0.0
 charset-normalizer==3.4.7
     # via
     #   -r requirements.txt
-    #   pdfminer-six
     #   requests
 constantly==23.10.4
     # via
@@ -29,7 +28,6 @@ constantly==23.10.4
 cryptography==48.0.0
     # via
     #   -r requirements.txt
-    #   pdfminer-six
     #   pyopenssl
     #   scrapy
     #   service-identity
@@ -90,8 +88,6 @@ parsel==1.11.0
     #   -r requirements.txt
     #   itemloaders
     #   scrapy
-pdfminer-six==20260107
-    # via -r requirements.txt
 protego==0.6.0
     # via
     #   -r requirements.txt
@@ -113,6 +109,8 @@ pydispatcher==2.0.7
     # via
     #   -r requirements.txt
     #   scrapy
+pymupdf==1.27.2.3
+    # via -r requirements.txt
 pyopenssl==26.2.0
     # via
     #   -r requirements.txt
