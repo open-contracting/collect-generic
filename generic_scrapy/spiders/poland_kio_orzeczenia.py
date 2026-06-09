@@ -20,7 +20,7 @@ DISCOVERY_START_GUESS = 35000
 ERROR_PAGE_MAX_LEN = 9000
 
 
-class KioOrzeczenia(ExportFileSpider):
+class PolandKioOrzeczenia(ExportFileSpider):
     """
     Krajowa Izba Odwoławcza (KIO) rulings + KIO/KD control opinions from orzeczenia.uzp.gov.pl.
 
@@ -32,7 +32,7 @@ class KioOrzeczenia(ExportFileSpider):
     ``from_date`` after parsing.
     """
 
-    name = "kio_orzeczenia"
+    name = "poland_kio_orzeczenia"
 
     base_url = "https://orzeczenia.uzp.gov.pl/Home/Details"
 
@@ -58,7 +58,7 @@ class KioOrzeczenia(ExportFileSpider):
     def from_crawler(cls, crawler, *args, **kwargs):
         spider = super().from_crawler(crawler, *args, **kwargs)
         if spider.max_id is None:
-            user_agent = crawler.settings.get("USER_AGENT") or "kio_orzeczenia"
+            user_agent = crawler.settings.get("USER_AGENT") or "poland_kio_orzeczenia"
             spider.logger.info("Discovering max Details/<id> via binary search...")
             spider.max_id = _discover_max_id(user_agent)
             spider.logger.info("Discovered max id: %d", spider.max_id)

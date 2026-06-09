@@ -15,7 +15,7 @@ Caveats:
   follow-up notices (award, update, performance) aren't captured. See the
   [open follow-up issue](#follow-up-issues) for details.
 
-#### `kio_orzeczenia`
+#### `poland_kio_orzeczenia`
 
 Walks `/Home/Details/<id>` on `orzeczenia.uzp.gov.pl` and writes one row per ruling (both KIO
 appeals and KIO/KD control opinions). Discovers the upper ID bound by binary search at startup;
@@ -33,7 +33,7 @@ Caveats:
 - Some pre-2017 rulings have neither an `issue_date` in the metadata nor a `/YY` year suffix in
   the case number; those are dropped because their date cannot be determined.
 
-#### `uzp_kontrole`
+#### `poland_uzp_kontrole`
 
 Walks the 17 violation-category landing pages under `gov.pl/web/uzp/informacje-o-wynikach-…`.
 Writes one row per finding with title, violation summary (carrying inline PZP article
@@ -51,7 +51,7 @@ Caveats:
 #### `poland_cpv`
 
 Joins KIO rulings and UZP findings to their procurement CPV codes. For each record produced
-by `kio_orzeczenia` and `uzp_kontrole`, downloads the associated PDF, extracts the first ~5
+by `poland_kio_orzeczenia` and `poland_uzp_kontrole`, downloads the associated PDF, extracts the first ~5
 pages with PyMuPDF, regexes out BZP / TED notice numbers, and queries
 `mo-board/api/v1/Board/Search?NoticeNumber=…` to pull the `cpvCode` field. Writes one row per
 (source, record_id, notice_number) under `data/poland_cpv/<crawl>/joined.json`.
@@ -90,7 +90,7 @@ Caveats:
 
 ### `polandpzp` command
 
-Aggregates PZP-article distributions from the latest `kio_orzeczenia` and `uzp_kontrole`
+Aggregates PZP-article distributions from the latest `poland_kio_orzeczenia` and `poland_uzp_kontrole`
 crawls under `FILES_STORE`. Writes `pzp_article_counts.csv`, `pzp_subclause_counts.csv` and
 `uzp_category_breakdown.csv` to the cwd or `--output-dir`. When a `poland_cpv` crawl is also
 present, additionally writes `cpv_counts.csv`.

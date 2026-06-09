@@ -3,7 +3,7 @@ import scrapy
 from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
 
-class UzpKontrole(ExportFileSpider):
+class PolandUzpKontrole(ExportFileSpider):
     """
     UZP control findings (Informacje o wynikach kontroli Prezesa Urzędu) from gov.pl/web/uzp.
 
@@ -16,7 +16,7 @@ class UzpKontrole(ExportFileSpider):
     items inside the ``editor-content`` block. Both are parsed.
     """
 
-    name = "uzp_kontrole"
+    name = "poland_uzp_kontrole"
 
     start_url = (
         "https://www.gov.pl/web/uzp/informacje-o-wynikach-kontroli-prezesa-urzedu"

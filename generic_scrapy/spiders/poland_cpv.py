@@ -27,7 +27,7 @@ class PolandCpv(ExportFileSpider):
     """
     Join KIO rulings and UZP findings to their procurement CPV codes.
 
-    For each record produced by ``kio_orzeczenia`` and ``uzp_kontrole``, downloads the associated
+    For each record produced by ``poland_kio_orzeczenia`` and ``poland_uzp_kontrole``, downloads the associated
     PDF, extracts text with pdfminer.six, regexes out BZP / TED notice numbers, and queries
     ``mo-board/api/v1/Board/Search?NoticeNumber=…`` to pull the ``cpvCode`` field.
 
@@ -77,7 +77,7 @@ class PolandCpv(ExportFileSpider):
     async def start(self):
         files_store = Path(self.settings["FILES_STORE"])
 
-        kio_dir = self._resolve_crawl(files_store, "kio_orzeczenia", self.kio_crawl)
+        kio_dir = self._resolve_crawl(files_store, "poland_kio_orzeczenia", self.kio_crawl)
         if kio_dir:
             for row in _read_jsonl(kio_dir / "rulings.json"):
                 yield self._pdf_request(row["pdf_url"], "KIO", row["record_id"], row.get("case_number"))
@@ -85,7 +85,7 @@ class PolandCpv(ExportFileSpider):
                 if self.sample and self._enqueued >= self.sample:
                     return
 
-        uzp_dir = self._resolve_crawl(files_store, "uzp_kontrole", self.uzp_crawl)
+        uzp_dir = self._resolve_crawl(files_store, "poland_uzp_kontrole", self.uzp_crawl)
         if uzp_dir:
             for idx, row in enumerate(_read_jsonl(uzp_dir / "findings.json")):
                 anchor = row.get("anchor") or f"row-{idx}"

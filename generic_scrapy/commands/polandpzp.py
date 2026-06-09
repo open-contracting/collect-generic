@@ -61,7 +61,7 @@ def _expand_pkt(pkt):
 class PolandPzp(ScrapyCommand):
     def short_desc(self):
         return (
-            "Aggregate PZP article and CPV counts from the latest kio_orzeczenia, uzp_kontrole and "
+            "Aggregate PZP article and CPV counts from the latest poland_kio_orzeczenia, poland_uzp_kontrole and "
             "(optional) poland_cpv crawls. Writes pzp_article_counts.csv, pzp_subclause_counts.csv, "
             "uzp_category_breakdown.csv and (when poland_cpv is present) cpv_counts.csv."
         )
@@ -80,12 +80,12 @@ class PolandPzp(ScrapyCommand):
         parser.add_argument(
             "--kio-crawl",
             type=str,
-            help="kio_orzeczenia crawl_directory (default: latest under FILES_STORE/kio_orzeczenia/)",
+            help="poland_kio_orzeczenia crawl_directory (default: latest under FILES_STORE/poland_kio_orzeczenia/)",
         )
         parser.add_argument(
             "--uzp-crawl",
             type=str,
-            help="uzp_kontrole crawl_directory (default: latest under FILES_STORE/uzp_kontrole/)",
+            help="poland_uzp_kontrole crawl_directory (default: latest under FILES_STORE/poland_uzp_kontrole/)",
         )
         parser.add_argument(
             "--cpv-crawl",
@@ -95,11 +95,13 @@ class PolandPzp(ScrapyCommand):
 
     def run(self, _args, opts):
         files_store = Path(self.settings["FILES_STORE"])
-        kio_crawl = self._resolve_crawl(files_store, "kio_orzeczenia", opts.kio_crawl)
-        uzp_crawl = self._resolve_crawl(files_store, "uzp_kontrole", opts.uzp_crawl)
+        kio_crawl = self._resolve_crawl(files_store, "poland_kio_orzeczenia", opts.kio_crawl)
+        uzp_crawl = self._resolve_crawl(files_store, "poland_uzp_kontrole", opts.uzp_crawl)
         cpv_crawl = self._resolve_crawl(files_store, "poland_cpv", opts.cpv_crawl)
         if not kio_crawl and not uzp_crawl:
-            raise UsageError(f"No crawls found under {files_store}/kio_orzeczenia/ or {files_store}/uzp_kontrole/")
+            raise UsageError(
+                f"No crawls found under {files_store}/poland_kio_orzeczenia/ or {files_store}/poland_uzp_kontrole/"
+            )
 
         article_counts: Counter[tuple[str, str]] = Counter()
         subclause_counts: Counter[tuple[str, str, str, str, str]] = Counter()
