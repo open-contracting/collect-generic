@@ -51,33 +51,37 @@ Caveats:
 #### `poland_cpv`
 
 Joins KIO rulings and UZP findings to their procurement CPV codes. For each record produced
-by `poland_kio_orzeczenia` and `poland_uzp_kontrole`, downloads the associated PDF, extracts the first ~5
-pages with PyMuPDF, regexes out BZP / TED notice numbers, and queries
-`mo-board/api/v1/Board/Search?NoticeNumber=…` to pull the `cpvCode` field. Writes one row per
-(source, record_id, notice_number) under `data/poland_cpv/<crawl>/joined.json`.
+by `poland_kio_orzeczenia` and `poland_uzp_kontrole`, downloads the associated PDF, extracts
+the first 20 pages with PyMuPDF, regexes out BZP / TED notice numbers, and looks each up:
 
-PDF and `Board/Search` responses are cached under `data/poland_cpv/_httpcache/`, so re-runs
-after regex tweaks don't re-hit the server.
+- BZP via `mo-board/api/v1/Board/Search?NoticeNumber=…` (Polish procurements).
+- TED via `POST api.ted.europa.eu/v3/notices/search` (above-EU procurements).
+
+Writes one JSONL row per (source, record_id, notice) under
+`data/poland_cpv/<crawl>/joined.json`, with `notice_kind` set to `BZP` or `TED` so you can
+tell which source resolved the CPV. CPV codes are normalised to the 8-digit base form (no
+trailing check digit) so BZP- and TED-resolved codes are directly comparable.
+
+PDF and lookup responses are cached under `data/poland_cpv/_httpcache/`, so re-runs after
+regex / extraction tweaks don't re-hit the servers.
 
 PyMuPDF is AGPL-3.0 licensed (the only AGPL dep in this stack). Combining this repo with
 PyMuPDF means the combined work effectively has to comply with AGPL terms (source disclosure
 including for network-deployed modified versions). Chosen here for re-processing speed —
-PyMuPDF extracts the first 5 pages in ~20 ms vs ~0.7 s for pdfminer, which matters once the
+PyMuPDF extracts the first 20 pages in ~80 ms vs ~3 s for pdfminer, which matters once the
 PDFs are cached and we're iterating on the regex / extraction logic.
 
 Caveats:
 
 - Many KIO rulings are procedural ("umorzenie postępowania") and don't cite the notice in the
-  first pages; the spider records these with `pdf_status=no_notice` and `notice_number=null`.
-  A small sample shows roughly 30% of recent rulings resolve to a notice; the rest are
-  procedural.
-- Some KIO PDFs are scanned images — text extraction returns empty for those, surfaced as
+  PDF text at all; the spider records these with `pdf_status=no_notice`.
+- Some KIO/UZP PDFs are scanned images — text extraction returns empty, surfaced as
   `pdf_status=empty`. OCR is out of scope.
-- Above-EU-threshold procurements publish only to TED (not BZP); the spider captures the TED
-  number under `ted_numbers` but does not resolve it to CPV — Polish `Board/Search` only
-  indexes BZP. Resolving TED would require the EU TED API.
-- UZP findings are partly anonymised and the notice number is sometimes redacted in the
-  published "Informacja o wyniku kontroli" PDF.
+- TED's current Search API does not reliably index pre-migration (~pre-2019) notices, so
+  older TED references show up as `lookup_hit=false`. About half our UZP TED references are
+  in that older range.
+- UZP findings are partly anonymised and the notice number may be redacted in the published
+  "Informacja o wyniku kontroli" PDF.
 
 #### Operational notes
 

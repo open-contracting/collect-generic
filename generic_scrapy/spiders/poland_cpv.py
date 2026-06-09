@@ -23,32 +23,42 @@ PDF_MAX_PAGES = 20
 # procurements that publish to TED only will surface with notice_number=None and ted_numbers set.
 BZP_NUMBER_RE = re.compile(r"\b\d{4}/BZP\s+\d{6,}", re.IGNORECASE)
 TED_NUMBER_RE = re.compile(r"\b\d{4}/S\s+\d+[-\u2013]\d+", re.IGNORECASE)
+# Maps the human-readable form "2020/S 013-025754" to TED API publication-number "025754-2020".
+TED_PUBLICATION_PARTS_RE = re.compile(r"(\d{4})/S\s+\d+[-\u2013](\d+)", re.IGNORECASE)
 
 
 class PolandCpv(ExportFileSpider):
     """
     Join KIO rulings and UZP findings to their procurement CPV codes.
 
-    For each record produced by ``poland_kio_orzeczenia`` and ``poland_uzp_kontrole``, downloads the associated
-    PDF, extracts text with pdfminer.six, regexes out BZP / TED notice numbers, and queries
-    ``mo-board/api/v1/Board/Search?NoticeNumber=…`` to pull the ``cpvCode`` field.
+    For each record produced by ``poland_kio_orzeczenia`` and ``poland_uzp_kontrole``, downloads
+    the associated PDF, extracts text with PyMuPDF, regexes out BZP / TED notice numbers, and
+    looks each up against two sources:
+
+    - BZP numbers via ``mo-board/api/v1/Board/Search?NoticeNumber=…`` (Polish procurements).
+    - TED numbers via ``POST api.ted.europa.eu/v3/notices/search`` (above-EU-threshold
+      procurements). TED returns CPV codes as 8-digit base codes (no checksum); Board/Search
+      returns ``XXXXXXXX-X`` with a Polish label. We normalise to the 8-digit base in
+      ``cpv_codes`` for uniformity.
 
     Output: ``data/poland_cpv/<crawl_directory>/joined.json`` — one JSONL row per
-    (source, record_id, notice_number) tuple, including rows where extraction yielded nothing
-    (notice_number=None) so the miss rate is visible downstream.
+    (source, record_id, notice). Rows include ``notice_kind`` ("BZP" or "TED" or null) so you
+    can tell which lookup source produced the CPVs.
 
     Caveats:
 
-    - Some KIO PDFs are scanned images; pdfminer returns empty / garbled text for those.
+    - Some KIO/UZP PDFs are scanned images; PyMuPDF returns empty text. Surfaced as
+      ``pdf_status=empty``. OCR is out of scope.
     - UZP findings are partly anonymised and the notice number may be redacted in the published
-      PDF; expect a non-trivial miss rate on UZP.
-    - TED-only notices are captured under ``ted_numbers`` but not resolved to CPV here — that
-      would require the EU TED API.
+      "Informacja o wyniku kontroli" PDF.
+    - TED's current Search API does not index every pre-migration (pre-~2019) notice; expect
+      some misses on older TED references.
     """
 
     name = "poland_cpv"
 
     BOARD_SEARCH_URL = "https://ezamowienia.gov.pl/mo-board/api/v1/Board/Search?NoticeNumber={n}&PageSize=5"
+    TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
 
     # ExportFileSpider
     export_outputs = {
@@ -74,7 +84,15 @@ class PolandCpv(ExportFileSpider):
         self.kio_crawl = kio_crawl
         self.uzp_crawl = uzp_crawl
         self._enqueued = 0
-        self.stats = {"pdf_ok": 0, "pdf_empty": 0, "pdf_error": 0, "board_hit": 0, "board_miss": 0}
+        self.stats = {
+            "pdf_ok": 0,
+            "pdf_empty": 0,
+            "pdf_error": 0,
+            "board_hit": 0,
+            "board_miss": 0,
+            "ted_hit": 0,
+            "ted_miss": 0,
+        }
 
     async def start(self):
         files_store = Path(self.settings["FILES_STORE"])
@@ -121,12 +139,12 @@ class PolandCpv(ExportFileSpider):
         except (pymupdf.FileDataError, RuntimeError, ValueError) as exc:
             self.logger.warning("pdf parse failed: %s (%s)", pdf_url, exc)
             self.stats["pdf_error"] += 1
-            yield self._row(source, record_id, label, pdf_url, None, [], [], pdf_status="error")
+            yield self._row(source, record_id, label, pdf_url, None, None, [], [], pdf_status="error")
             return
 
         if not text.strip():
             self.stats["pdf_empty"] += 1
-            yield self._row(source, record_id, label, pdf_url, None, [], [], pdf_status="empty")
+            yield self._row(source, record_id, label, pdf_url, None, None, [], [], pdf_status="empty")
             return
 
         self.stats["pdf_ok"] += 1
@@ -135,8 +153,48 @@ class PolandCpv(ExportFileSpider):
         bzp_numbers = sorted({re.sub(r"\s+", " ", n).strip() for n in BZP_NUMBER_RE.findall(text)})
         ted_numbers = sorted({re.sub(r"\s+", " ", n).strip() for n in TED_NUMBER_RE.findall(text)})
 
+        # Yield TED lookups too — many UZP findings (and a few KIO rulings) cite above-EU
+        # procurements that only publish to TED.
+        for ted in ted_numbers:
+            pub = _ted_publication_number(ted)
+            if pub is None:
+                continue
+            yield scrapy.Request(
+                self.TED_SEARCH_URL,
+                method="POST",
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+                body=json.dumps(
+                    {
+                        "query": f'publication-number="{pub}"',
+                        "fields": ["publication-number", "classification-cpv"],
+                    }
+                ),
+                callback=self.parse_ted_search,
+                cb_kwargs={
+                    "source": source,
+                    "record_id": record_id,
+                    "label": label,
+                    "pdf_url": pdf_url,
+                    "ted_raw": ted,
+                    "ted_publication": pub,
+                    "ted_numbers": ted_numbers,
+                },
+                dont_filter=True,
+            )
+
         if not bzp_numbers:
-            yield self._row(source, record_id, label, pdf_url, None, ted_numbers, [], pdf_status="no_notice")
+            if not ted_numbers:
+                yield self._row(
+                    source,
+                    record_id,
+                    label,
+                    pdf_url,
+                    None,
+                    None,
+                    ted_numbers,
+                    [],
+                    pdf_status="no_notice",
+                )
             return
 
         for notice in bzp_numbers:
@@ -158,7 +216,16 @@ class PolandCpv(ExportFileSpider):
         if not notices:
             self.stats["board_miss"] += 1
             yield self._row(
-                source, record_id, label, pdf_url, notice_number, ted_numbers, [], pdf_status="ok", board_hit=False
+                source,
+                record_id,
+                label,
+                pdf_url,
+                notice_number,
+                "BZP",
+                ted_numbers,
+                [],
+                pdf_status="ok",
+                lookup_hit=False,
             )
             return
 
@@ -167,7 +234,54 @@ class PolandCpv(ExportFileSpider):
         for record in notices:
             cpv.extend(_parse_cpv(record.get("cpvCode")))
         yield self._row(
-            source, record_id, label, pdf_url, notice_number, ted_numbers, cpv, pdf_status="ok", board_hit=True
+            source,
+            record_id,
+            label,
+            pdf_url,
+            notice_number,
+            "BZP",
+            ted_numbers,
+            cpv,
+            pdf_status="ok",
+            lookup_hit=True,
+        )
+
+    def parse_ted_search(self, response, source, record_id, label, pdf_url, ted_raw, ted_numbers, **_):
+        payload = response.json()
+        notices = payload.get("notices") or []
+        if not notices:
+            self.stats["ted_miss"] += 1
+            yield self._row(
+                source,
+                record_id,
+                label,
+                pdf_url,
+                ted_raw,
+                "TED",
+                ted_numbers,
+                [],
+                pdf_status="ok",
+                lookup_hit=False,
+            )
+            return
+
+        self.stats["ted_hit"] += 1
+        cpv = [
+            {"code": _normalize_cpv(code), "label": None}
+            for notice in notices
+            for code in notice.get("classification-cpv") or []
+        ]
+        yield self._row(
+            source,
+            record_id,
+            label,
+            pdf_url,
+            ted_raw,
+            "TED",
+            ted_numbers,
+            cpv,
+            pdf_status="ok",
+            lookup_hit=True,
         )
 
     def errback_pdf(self, failure):
@@ -175,20 +289,42 @@ class PolandCpv(ExportFileSpider):
         self.logger.warning("pdf request failed: %s (%s)", request.url, failure.value)
         self.stats["pdf_error"] += 1
         cb = request.cb_kwargs
-        yield self._row(cb["source"], cb["record_id"], cb["label"], cb["pdf_url"], None, [], [], pdf_status="error")
+        yield self._row(
+            cb["source"],
+            cb["record_id"],
+            cb["label"],
+            cb["pdf_url"],
+            None,
+            None,
+            [],
+            [],
+            pdf_status="error",
+        )
 
     @staticmethod
-    def _row(source, record_id, label, pdf_url, notice_number, ted_numbers, cpv_codes, pdf_status, board_hit=None):
+    def _row(
+        source,
+        record_id,
+        label,
+        pdf_url,
+        notice_number,
+        notice_kind,
+        ted_numbers,
+        cpv_codes,
+        pdf_status,
+        lookup_hit=None,
+    ):
         return {
             "source": source,
             "record_id": record_id,
             "label": label,
             "pdf_url": pdf_url,
             "pdf_status": pdf_status,
+            "notice_kind": notice_kind,
             "notice_number": notice_number,
             "ted_numbers": ted_numbers,
             "cpv_codes": cpv_codes,
-            "board_hit": board_hit,
+            "lookup_hit": lookup_hit,
         }
 
     @staticmethod
@@ -219,7 +355,7 @@ def _extract_first_pages(body):
         return "\n".join(doc[i].get_text() for i in range(min(PDF_MAX_PAGES, doc.page_count)))
 
 
-CPV_RE = re.compile(r"(\d{8}-\d)\s*(?:\(([^)]*)\))?")
+CPV_RE = re.compile(r"(\d{8})(?:-\d)?\s*(?:\(([^)]*)\))?")
 
 
 def _parse_cpv(cpv_string):
@@ -227,7 +363,25 @@ def _parse_cpv(cpv_string):
     Parse a Board/Search ``cpvCode`` string into a list of ``{code, label}`` dicts.
 
     Input is a comma-separated string such as ``"48000000-8 (Pakiety oprogramowania), …"``.
+    The trailing check-digit is stripped so codes are comparable with TED responses, which
+    return the 8-digit base.
     """
     if not cpv_string:
         return []
     return [{"code": code, "label": (label or "").strip() or None} for code, label in CPV_RE.findall(cpv_string)]
+
+
+def _normalize_cpv(code):
+    """Strip a check-digit suffix if present so all CPV codes are 8-digit strings."""
+    if not code:
+        return code
+    base = code.split("-", 1)[0]
+    return base.strip()
+
+
+def _ted_publication_number(ted_raw):
+    """Convert a human-readable TED reference like ``2020/S 013-025754`` to ``025754-2020``."""
+    match = TED_PUBLICATION_PARTS_RE.search(ted_raw or "")
+    if not match:
+        return None
+    return f"{match.group(2)}-{match.group(1)}"
