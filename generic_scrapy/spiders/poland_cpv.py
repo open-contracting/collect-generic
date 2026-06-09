@@ -10,9 +10,11 @@ from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
 
 # Notice numbers in both KIO rulings and UZP findings are cited on the first few pages — KIO in
 # the opening "Sygn. akt" / "Uzasadnienie" block, UZP on the cover sheet of the Informacja PDF.
-# We only extract the first PDF_MAX_PAGES pages so the spider stays fast (~20 ms per PDF with
-# PyMuPDF) and the regex never has to scan tens of pages of body text.
-PDF_MAX_PAGES = 5
+# Extracting more pages catches notice citations that UZP "Informacja o wyniku kontroli"
+# documents bury past the cover sheet. Sampling 30 no-notice UZP PDFs showed ~10% had the
+# notice on pages 6-20 and 0% needed pages beyond that. PyMuPDF stays under ~80 ms/PDF at this
+# cap.
+PDF_MAX_PAGES = 20
 
 # BZP notice numbers in PDFs are usually written without the version suffix ("2023/BZP 00529765"),
 # but Board/Search accepts both with and without it, so we capture the unsuffixed form and let the
