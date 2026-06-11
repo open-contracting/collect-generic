@@ -79,10 +79,13 @@ class PolandCpv(ExportFileSpider):
         "DOWNLOAD_MAXSIZE": 64 * 1024 * 1024,
     }
 
-    def __init__(self, *args, kio_crawl=None, uzp_crawl=None, **kwargs):
+    def __init__(self, *args, kio_crawl=None, uzp_crawl=None, articles=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.kio_crawl = kio_crawl
         self.uzp_crawl = uzp_crawl
+        # Comma-separated article filter, e.g. "99.1,99.4,433,436".
+        # A token "N.U" matches art. N ust. U (any pkt); a bare "N" matches art. N (any ust., any pkt).
+        self.article_filters = _parse_article_filters(articles) if articles else None
         self._enqueued = 0
         self.stats = {
             "pdf_ok": 0,
@@ -100,6 +103,8 @@ class PolandCpv(ExportFileSpider):
         kio_dir = self._resolve_crawl(files_store, "poland_kio_orzeczenia", self.kio_crawl)
         if kio_dir:
             for row in _read_jsonl(kio_dir / "rulings.json"):
+                if not _ruling_matches_filter(row.get("articles") or [], self.article_filters):
+                    continue
                 yield self._pdf_request(row["pdf_url"], "KIO", row["record_id"], row.get("case_number"))
                 self._enqueued += 1
                 if self.sample and self._enqueued >= self.sample:
@@ -108,6 +113,11 @@ class PolandCpv(ExportFileSpider):
         uzp_dir = self._resolve_crawl(files_store, "poland_uzp_kontrole", self.uzp_crawl)
         if uzp_dir:
             for idx, row in enumerate(_read_jsonl(uzp_dir / "findings.json")):
+                # UZP findings carry article references inline in violation_text, not in a
+                # structured list — apply the filter to violation_text.
+                violation = row.get("violation_text") or ""
+                if not _ruling_matches_filter([violation], self.article_filters):
+                    continue
                 anchor = row.get("anchor") or f"row-{idx}"
                 for attachment in row.get("attachments") or []:
                     url = attachment.get("url")
@@ -155,6 +165,7 @@ class PolandCpv(ExportFileSpider):
 
         # Yield TED lookups too — many UZP findings (and a few KIO rulings) cite above-EU
         # procurements that only publish to TED.
+        ted_requests_yielded = 0
         for ted in ted_numbers:
             pub = _ted_publication_number(ted)
             if pub is None:
@@ -170,6 +181,7 @@ class PolandCpv(ExportFileSpider):
                     }
                 ),
                 callback=self.parse_ted_search,
+                errback=self.errback_ted,
                 cb_kwargs={
                     "source": source,
                     "record_id": record_id,
@@ -181,9 +193,12 @@ class PolandCpv(ExportFileSpider):
                 },
                 dont_filter=True,
             )
+            ted_requests_yielded += 1
 
         if not bzp_numbers:
-            if not ted_numbers:
+            # Emit a fallback row when no Board/Search request will fire AND no TED request
+            # was successfully scheduled (either no TED numbers at all, or all were unparseable).
+            if not ted_requests_yielded:
                 yield self._row(
                     source,
                     record_id,
@@ -201,6 +216,8 @@ class PolandCpv(ExportFileSpider):
             yield scrapy.Request(
                 self.BOARD_SEARCH_URL.format(n=quote(notice, safe="")),
                 callback=self.parse_board_search,
+                errback=self.errback_board,
+                dont_filter=True,
                 cb_kwargs={
                     "source": source,
                     "record_id": record_id,
@@ -282,6 +299,42 @@ class PolandCpv(ExportFileSpider):
             cpv,
             pdf_status="ok",
             lookup_hit=True,
+        )
+
+    def errback_board(self, failure):
+        request = failure.request
+        self.logger.warning("board lookup failed: %s (%s)", request.url, failure.value)
+        self.stats["board_miss"] += 1
+        cb = request.cb_kwargs
+        yield self._row(
+            cb["source"],
+            cb["record_id"],
+            cb["label"],
+            cb["pdf_url"],
+            cb["notice_number"],
+            "BZP",
+            cb["ted_numbers"],
+            [],
+            pdf_status="ok",
+            lookup_hit=False,
+        )
+
+    def errback_ted(self, failure):
+        request = failure.request
+        self.logger.warning("ted lookup failed: %s (%s)", request.url, failure.value)
+        self.stats["ted_miss"] += 1
+        cb = request.cb_kwargs
+        yield self._row(
+            cb["source"],
+            cb["record_id"],
+            cb["label"],
+            cb["pdf_url"],
+            cb["ted_raw"],
+            "TED",
+            cb["ted_numbers"],
+            [],
+            pdf_status="ok",
+            lookup_hit=False,
         )
 
     def errback_pdf(self, failure):
@@ -385,3 +438,49 @@ def _ted_publication_number(ted_raw):
     if not match:
         return None
     return f"{match.group(2)}-{match.group(1)}"
+
+
+CITATION_RE = re.compile(
+    r"art\.\s*(\d+[a-z]?)(?:\s*ust\.?\s*(\d+[a-z]?))?(?:\s*pkt\.?\s*(\d+[a-z]?))?",
+    re.IGNORECASE,
+)
+
+
+def _parse_article_filters(spec):
+    """
+    Parse a comma-separated article filter spec into a list of (article, ust, pkt) matchers.
+
+    Token forms: ``"99"`` (any ust., any pkt), ``"99.1"`` (art. 99 ust. 1, any pkt),
+    ``"99.1.4"`` (art. 99 ust. 1 pkt 4). Empty values become ``None`` (wildcard).
+    """
+    filters = []
+    for raw in spec.split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        # Token forms accept up to three dot-separated levels: article.ust.pkt.
+        parts = [*token.split("."), None, None, None][:3]
+        filters.append(tuple(parts))
+    return filters
+
+
+def _ruling_matches_filter(article_texts, filters):
+    """Return True if any citation in ``article_texts`` matches any filter, or if no filter is set."""
+    if not filters:
+        return True
+    for text in article_texts:
+        if not text:
+            continue
+        for m in CITATION_RE.finditer(text):
+            triple = (m.group(1), m.group(2), m.group(3))
+            for f in filters:
+                fa, fu, fp = f
+                ta, tu, tp = triple
+                if ta != fa:
+                    continue
+                if fu is not None and tu != fu:
+                    continue
+                if fp is not None and tp != fp:
+                    continue
+                return True
+    return False
