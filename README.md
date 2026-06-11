@@ -97,7 +97,8 @@ Caveats:
 Aggregates PZP-article distributions from the latest `poland_kio_orzeczenia` and `poland_uzp_kontrole`
 crawls under `FILES_STORE`. Writes `pzp_article_counts.csv`, `pzp_subclause_counts.csv` and
 `uzp_category_breakdown.csv` to the cwd or `--output-dir`. When a `poland_cpv` crawl is also
-present, additionally writes `cpv_counts.csv`.
+present, additionally writes `cpv_counts.csv` and `cpv_division_by_dimension.csv` (cross-tab of
+CPV division × OPZ-quality dimension with three "simple-subset" filtered rows for divs 48/72/33).
 
 ```
 scrapy polandpzp                                # latest crawls → CSVs in cwd
