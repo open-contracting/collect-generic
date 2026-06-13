@@ -277,6 +277,18 @@ def _aggregate_cpv(path):
 # ust. 1 bundles clarity/completeness/correctness/internal-consistency into one citation key
 # (the Polish sentence enumerates "jednoznaczny i wyczerpujący ... dostatecznie dokładnych
 # i zrozumiałych ..."). The co-citation refinement trades recall for disambiguation.
+#
+# Art. 16 (general procurement principles: pkt 1 = fair competition + equal treatment,
+# pkt 2 = transparency, pkt 3 = proportionality) is intentionally NOT used as a matcher
+# signal, even though pkt 3 is unambiguously about proportionality and pkt 1 about
+# competition. The reason: art. 16 codifies these as *general-procedure* principles, broader
+# than the OPZ-specific articles. A ruling citing art. 16 pkt 3 may be about any
+# proportionality issue in the procedure (timelines, evaluation criteria, …), not narrowly
+# OPZ-requirement proportionality (art. 112 / 116). Similarly art. 16 pkt 1 bundles fair
+# competition with equal-treatment, covering procedural fairness generally rather than the
+# OPZ-description non-discrimination of art. 99 ust. 2/4/5/6. Bare art. 16 (no pkt) is
+# ambiguous across all three principles. Keeping art. 16 out trades recall for per-record
+# signal strength.
 DIMENSIONS = (
     "correctness",
     "completeness",
@@ -292,7 +304,7 @@ DIMENSIONS = (
 def _matches_dimension(subs, dim):
     art99_1 = ("99", "1") in subs
     if dim == "correctness":
-        return art99_1 or ("103", "") in subs
+        return ("103", "") in subs
     if dim == "completeness":
         return any((a, "") in subs for a in ("134", "281", "282", "104", "105"))
     if dim == "clarity":
