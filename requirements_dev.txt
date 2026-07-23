@@ -92,7 +92,7 @@ protego==0.3.0
     # via
     #   -r requirements.txt
     #   scrapy
-pyasn1==0.6.3
+pyasn1==0.6.4
     # via
     #   -r requirements.txt
     #   pyasn1-modules
