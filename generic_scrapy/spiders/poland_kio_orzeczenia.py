@@ -161,7 +161,7 @@ def _discover_max_id(user_agent, start_guess=DISCOVERY_START_GUESS, sanity_cap=1
 
     def is_valid(record_id):
         url = f"https://orzeczenia.uzp.gov.pl/Home/Details/{record_id}"
-        request = urllib.request.Request(url, headers={"User-Agent": user_agent})  # noqa: S310
+        request = urllib.request.Request(url, headers={"User-Agent": user_agent})
         try:
             with urllib.request.urlopen(request, timeout=15, context=ssl_context) as response:  # noqa: S310
                 return len(response.read()) >= ERROR_PAGE_MAX_LEN
