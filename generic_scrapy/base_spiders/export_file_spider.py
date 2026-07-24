@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 from generic_scrapy.base_spiders.base_spider import BaseSpider
 from generic_scrapy.settings import FILES_STORE
@@ -43,10 +43,8 @@ class ExportFileSpider(BaseSpider):
             item_filter = cls.export_outputs[entry]["item_filter"]
             file_name = cls.export_outputs[entry]["name"]
             for export_format in cls.export_outputs[entry]["formats"]:
-                file_path = os.path.join(
-                    settings.get("FILES_STORE"),
-                    "%(name)s/%(crawl_directory)s",
-                    f"{file_name}.{export_format}",
+                file_path = str(
+                    Path(settings.get("FILES_STORE")) / "%(name)s/%(crawl_directory)s" / f"{file_name}.{export_format}"
                 )
                 feeds[file_path] = {"format": "jsonlines" if export_format == "json" else "csv"}
                 if item_filter:
@@ -57,4 +55,4 @@ class ExportFileSpider(BaseSpider):
 
     @classmethod
     def get_file_store_directory(cls):
-        return os.path.join(FILES_STORE, cls.name, cls.crawl_directory)
+        return Path(FILES_STORE) / cls.name / cls.crawl_directory

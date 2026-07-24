@@ -1,5 +1,4 @@
 import csv
-import os.path
 from datetime import datetime, timedelta
 
 from scrapy.commands import ScrapyCommand
@@ -50,9 +49,9 @@ class IncrementalUpdate(ScrapyCommand):
 
         max_date = None
         if opts.date_field_name:
-            with open(
-                os.path.join(spidercls.get_file_store_directory(), f"{spidercls.export_outputs['main']['name']}.csv")
-            ) as f:
+            with (
+                spidercls.get_file_store_directory() / f"{spidercls.export_outputs['main']['name']}.csv"
+            ).open() as f:
                 max_date = datetime.strptime(
                     max(row[opts.date_field_name] for row in csv.DictReader(f)), VALID_DATE_FORMATS["datetime"]
                 ).replace(tzinfo=datetime.timezone.utc) + timedelta(seconds=1)
