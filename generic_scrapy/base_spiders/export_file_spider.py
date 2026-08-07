@@ -44,7 +44,7 @@ class ExportFileSpider(BaseSpider):
             file_name = cls.export_outputs[entry]["name"]
             for export_format in cls.export_outputs[entry]["formats"]:
                 file_path = str(
-                    Path(settings.get("FILES_STORE")) / "%(name)s/%(crawl_directory)s" / f"{file_name}.{export_format}"
+                    Path(settings["FILES_STORE"]) / "%(name)s/%(crawl_directory)s" / f"{file_name}.{export_format}"
                 )
                 feeds[file_path] = {"format": "jsonlines" if export_format == "json" else "csv"}
                 if item_filter:

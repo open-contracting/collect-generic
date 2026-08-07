@@ -28,5 +28,12 @@ ignore-variadic-names = true
 "*/settings.py" = ["ERA001"]  # commented-out code
 "*/log_formatter.py" = ["ARG002"]  # scrapy
 
+[tool.scrapy-lint.per-file-ignores]
+"generic_scrapy/settings.py" = [
+    "SCP09",  # robots.txt ignored by default
+    "SCP10",  # Incomplete project throttling
+    "SCP17",  # Redundant setting value
+]
+
 [tool.uv.pip]
 exclude-newer = "1 week"

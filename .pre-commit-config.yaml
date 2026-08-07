@@ -19,3 +19,7 @@ repos:
         name: pip-compile requirements_dev.in
         args: [requirements_dev.in, -o, requirements_dev.txt]
         files: ^requirements(_dev)?\.(in|txt)$
+  - repo: https://github.com/scrapy/scrapy-lint
+    rev: v0.1.1
+    hooks:
+      - id: scrapy-lint
