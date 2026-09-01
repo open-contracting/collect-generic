@@ -88,7 +88,7 @@ parsel==1.8.1
     #   -r requirements.txt
     #   itemloaders
     #   scrapy
-protego==0.3.0
+protego==0.6.2
     # via
     #   -r requirements.txt
     #   scrapy
@@ -132,6 +132,11 @@ service-identity==24.1.0
     # via
     #   -r requirements.txt
     #   scrapy
+setuptools==84.0.0
+    # via
+    #   -r requirements.txt
+    #   incremental
+    #   zope-interface
 six==1.16.0
     # via
     #   -r requirements.txt
