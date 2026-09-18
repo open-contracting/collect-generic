@@ -7,7 +7,9 @@ attrs==26.1.0
 automat==25.4.16
     # via twisted
 certifi==2026.5.20
-    # via requests
+    # via
+    #   -r requirements.in
+    #   requests
 cffi==2.0.0
     # via cryptography
 charset-normalizer==3.4.7
