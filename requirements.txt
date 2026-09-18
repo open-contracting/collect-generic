@@ -2,10 +2,9 @@
 #    uv pip compile requirements.in -o requirements.txt
 attrs==23.1.0
     # via
-    #   automat
     #   service-identity
     #   twisted
-automat==22.10.0
+automat==25.4.16
     # via twisted
 certifi==2024.7.4
     # via requests
@@ -85,19 +84,13 @@ scrapy==2.17.0
     # via -r requirements.in
 service-identity==24.1.0
     # via scrapy
-setuptools==84.0.0
-    # via
-    #   incremental
-    #   zope-interface
 six==1.16.0
-    # via
-    #   automat
-    #   requests-file
+    # via requests-file
 tldextract==3.4.4
     # via scrapy
 tomli==2.0.1
     # via incremental
-twisted==24.7.0rc1
+twisted==26.4.0rc2
     # via scrapy
 typing-extensions==4.15.0
     # via
