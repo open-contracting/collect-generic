@@ -1,5 +1,5 @@
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from scrapy.commands import ScrapyCommand
 from scrapy.exceptions import UsageError
@@ -54,7 +54,7 @@ class IncrementalUpdate(ScrapyCommand):
             ).open() as f:
                 max_date = datetime.strptime(
                     max(row[opts.date_field_name] for row in csv.DictReader(f)), VALID_DATE_FORMATS["datetime"]
-                ).replace(tzinfo=datetime.timezone.utc) + timedelta(seconds=1)
+                ).replace(tzinfo=timezone.utc) + timedelta(seconds=1)
 
         self.crawler_process.crawl(spidercls, from_date=max_date, crawl_directory=opts.crawl_directory)
         self.crawler_process.start()

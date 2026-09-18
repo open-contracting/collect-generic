@@ -6,7 +6,11 @@
 #     https://docs.scrapy.org/en/latest/topics/settings.html
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+#
+# https://github.com/scrapy/scrapy/blob/master/scrapy/templates/project/module/settings.py.tmpl
 import os
+
+from generic_scrapy import exporters, log_formatter
 
 BOT_NAME = "generic_scrapy"
 
@@ -91,13 +95,13 @@ FEED_EXPORT_ENCODING = "utf-8"
 # Project-specific Scrapy configuration
 
 # https://docs.scrapy.org/en/latest/topics/settings.html#log-formatter
-LOG_FORMATTER = "generic_scrapy.log_formatter.LogFormatter"
+LOG_FORMATTER = log_formatter.LogFormatter
 
 # https://docs.scrapy.org/en/latest/topics/commands.html#std-setting-COMMANDS_MODULE
 COMMANDS_MODULE = "generic_scrapy.commands"
 
 FEED_EXPORTERS = {
-    "csv": "generic_scrapy.exporters.HeadlessCsvItemExporter",
+    "csv": exporters.HeadlessCsvItemExporter,
 }
 
 
