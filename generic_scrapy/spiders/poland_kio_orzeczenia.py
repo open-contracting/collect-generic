@@ -58,7 +58,7 @@ class PolandKioOrzeczenia(ExportFileSpider):
     def from_crawler(cls, crawler, *args, **kwargs):
         spider = super().from_crawler(crawler, *args, **kwargs)
         if spider.max_id is None:
-            user_agent = crawler.settings.get("USER_AGENT") or "poland_kio_orzeczenia"
+            user_agent = crawler.settings["USER_AGENT"] or "poland_kio_orzeczenia"
             spider.logger.info("Discovering max Details/<id> via binary search...")
             spider.max_id = _discover_max_id(user_agent)
             spider.logger.info("Discovered max id: %d", spider.max_id)
