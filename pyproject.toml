@@ -3,7 +3,7 @@ name = "collect-generic"
 version = "0.0.0"
 
 [project.entry-points.scrapy]
-settings = "kingfisher_scrapy.settings"
+settings = "generic_scrapy.settings"
 
 [tool.setuptools.packages.find]
 exclude = ["tests", "tests.*"]
