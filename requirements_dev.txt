@@ -131,6 +131,10 @@ service-identity==24.1.0
     # via
     #   -r requirements.txt
     #   scrapy
+setuptools==84.2.0
+    # via
+    #   -r requirements.txt
+    #   incremental
 six==1.16.0
     # via
     #   -r requirements.txt
@@ -143,7 +147,7 @@ tomli==2.0.1
     # via
     #   -r requirements.txt
     #   incremental
-twisted==26.10.0rc1
+twisted==26.4.0
     # via
     #   -r requirements.txt
     #   scrapy
