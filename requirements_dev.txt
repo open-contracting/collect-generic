@@ -9,7 +9,7 @@ automat==25.4.16
     # via
     #   -r requirements.txt
     #   twisted
-certifi==2024.7.4
+certifi==2026.10.18
     # via
     #   -r requirements.txt
     #   requests
@@ -131,11 +131,6 @@ service-identity==24.1.0
     # via
     #   -r requirements.txt
     #   scrapy
-setuptools==84.0.0
-    # via
-    #   -r requirements.txt
-    #   incremental
-    #   zope-interface
 six==1.16.0
     # via
     #   -r requirements.txt
