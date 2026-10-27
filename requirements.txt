@@ -6,7 +6,7 @@ attrs==23.1.0
     #   twisted
 automat==25.4.16
     # via twisted
-certifi==2024.7.4
+certifi==2026.10.18
     # via requests
 cffi==2.0.0
     # via cryptography
