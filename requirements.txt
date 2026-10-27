@@ -92,7 +92,7 @@ tldextract==3.4.4
     # via scrapy
 tomli==2.0.1
     # via incremental
-twisted==26.4.0
+twisted==26.10.0rc1
     # via scrapy
 typing-extensions==4.15.0
     # via
