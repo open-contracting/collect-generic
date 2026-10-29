@@ -10,7 +10,7 @@
 # https://github.com/scrapy/scrapy/blob/master/scrapy/templates/project/module/settings.py.tmpl
 import os
 
-from generic_scrapy import exporters, log_formatter
+from generic_scrapy import log_formatter
 
 BOT_NAME = "generic_scrapy"
 
@@ -99,10 +99,6 @@ LOG_FORMATTER = log_formatter.LogFormatter
 
 # https://docs.scrapy.org/en/latest/topics/commands.html#std-setting-COMMANDS_MODULE
 COMMANDS_MODULE = "generic_scrapy.commands"
-
-FEED_EXPORTERS = {
-    "csv": exporters.HeadlessCsvItemExporter,
-}
 
 
 # Project configuration

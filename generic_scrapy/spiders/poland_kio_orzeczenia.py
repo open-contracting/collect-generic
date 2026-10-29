@@ -12,7 +12,7 @@ import certifi
 import scrapy
 from scrapy.exceptions import CloseSpider
 
-from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
+from generic_scrapy.base_spiders.base_spider import BaseSpider
 
 CASE_YEAR_RE = re.compile(r"/(\d{2})\b")
 
@@ -24,7 +24,7 @@ DISCOVERY_START_GUESS = 35000
 ERROR_PAGE_MAX_LEN = 9000
 
 
-class PolandKioOrzeczenia(ExportFileSpider):
+class PolandKioOrzeczenia(BaseSpider):
     """
     Krajowa Izba Odwoławcza (KIO) rulings + KIO/KD control opinions from orzeczenia.uzp.gov.pl.
 
@@ -40,16 +40,8 @@ class PolandKioOrzeczenia(ExportFileSpider):
 
     base_url = "https://orzeczenia.uzp.gov.pl/Home/Details"
 
-    # ExportFileSpider
-    export_outputs = {
-        "main": {
-            "name": "rulings",
-            "formats": ["json"],
-            "item_filter": None,
-        },
-    }
-
     # BaseSpider
+    export_name = "rulings"
     date_required = True
     default_from_date = "2023-01-01T00:00:00"
 

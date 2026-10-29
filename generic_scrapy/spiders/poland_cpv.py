@@ -10,7 +10,7 @@ from urllib.parse import quote
 import pymupdf
 import scrapy
 
-from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
+from generic_scrapy.base_spiders.base_spider import BaseSpider
 
 # Notice numbers in both KIO rulings and UZP findings are cited on the first few pages — KIO in
 # the opening "Sygn. akt" / "Uzasadnienie" block, UZP on the cover sheet of the Informacja PDF.
@@ -30,7 +30,7 @@ TED_NUMBER_RE = re.compile(r"\b\d{4}/S\s+\d+[-\u2013]\d+", re.IGNORECASE)
 TED_PUBLICATION_PARTS_RE = re.compile(r"(\d{4})/S\s+\d+[-\u2013](\d+)", re.IGNORECASE)
 
 
-class PolandCpv(ExportFileSpider):
+class PolandCpv(BaseSpider):
     """
     Join KIO rulings and UZP findings to their procurement CPV codes.
 
@@ -63,14 +63,8 @@ class PolandCpv(ExportFileSpider):
     BOARD_SEARCH_URL = "https://ezamowienia.gov.pl/mo-board/api/v1/Board/Search?NoticeNumber={n}&PageSize=5"
     TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
 
-    # ExportFileSpider
-    export_outputs = {
-        "main": {
-            "name": "joined",
-            "formats": ["json"],
-            "item_filter": None,
-        },
-    }
+    # BaseSpider
+    export_name = "joined"
 
     custom_settings = {
         # Cache PDFs and Board/Search responses so re-runs after regex tweaks don't re-fetch.

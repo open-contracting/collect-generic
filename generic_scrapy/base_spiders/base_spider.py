@@ -1,4 +1,5 @@
 import datetime as dt
+from pathlib import Path
 
 import scrapy
 from scrapy.exceptions import UsageError
@@ -26,6 +27,9 @@ class BaseSpider(scrapy.Spider):
     -  If the spider requires date parameters to be set, add a ``date_required = True`` class attribute, and set the
        ``date_format`` and ``default_from_date`` class attributes as above.
 
+    To store items in ``FILES_STORE/<spider name>/<crawl_directory>/<export_name>.json`` as JSON Lines, set an
+    ``export_name`` class attribute.
+
     .. tip::
 
         If ``date_required`` is ``True``, or if either the ``from_date`` or ``until_date`` spider arguments are set,
@@ -37,6 +41,9 @@ class BaseSpider(scrapy.Spider):
     # Regarding the data source.
     date_format = "datetime"
     date_required = False
+
+    # Regarding the output.
+    export_name = None
 
     def __init__(
         self,
@@ -80,6 +87,13 @@ class BaseSpider(scrapy.Spider):
         spider_arguments.update(kwargs)
 
         self.logger.info("Spider arguments: %r", spider_arguments)
+
+    @classmethod
+    def update_settings(cls, settings):
+        super().update_settings(settings)
+        if cls.export_name:
+            file_path = Path(settings["FILES_STORE"]) / "%(name)s/%(crawl_directory)s" / f"{cls.export_name}.json"
+            settings.set("FEEDS", {str(file_path): {"format": "jsonlines"}}, priority="spider")
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):

@@ -4,10 +4,10 @@ __generated_at__ = "2026-06-03"
 
 import scrapy
 
-from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
+from generic_scrapy.base_spiders.base_spider import BaseSpider
 
 
-class PolandUzpKontrole(ExportFileSpider):
+class PolandUzpKontrole(BaseSpider):
     """
     UZP control findings (Informacje o wynikach kontroli Prezesa Urzędu) from gov.pl/web/uzp.
 
@@ -27,14 +27,8 @@ class PolandUzpKontrole(ExportFileSpider):
         "---postepowania-wszczete-od-28072016-r"
     )
 
-    # ExportFileSpider
-    export_outputs = {
-        "main": {
-            "name": "findings",
-            "formats": ["json"],
-            "item_filter": None,
-        },
-    }
+    # BaseSpider
+    export_name = "findings"
 
     async def start(self):
         yield scrapy.Request(self.start_url, callback=self.parse_index)
