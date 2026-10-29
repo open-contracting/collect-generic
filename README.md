@@ -30,6 +30,37 @@ Caveats:
 - Contracting-authority names in UZP findings are often anonymised, which limits joining findings back to specific named tenders.
 - No `from_date` filter — the full corpus is re-fetched on every run (it's small: ~400 records in seconds).
 
+#### `poland_uzp_wyniki_kontroli`
+
+Collects every UZP control result PDF published on the year pages of [kontrole uprzednie](https://www.gov.pl/web/uzp/kontrole-uprzednie) (ex-ante, 2023 onward) and [kontrole doraźne](https://www.gov.pl/web/uzp/kontrole-od-2021-roku) (ad-hoc, 2021 onward), discovering the year pages from the parent pages' links. Unlike `poland_uzp_kontrole`, which crawls the anonymised findings by violation category, this crawls the full results per control.
+
+For each file, saves the PDF and its text under `data/poland_uzp_wyniki_kontroli/<crawl_directory>/files/<uuid>.{pdf,txt}`, and writes one JSONL row per file to `files.json` with:
+
+- `control_id`, normalised like `KU_12_25`, `KND_132_21` or `KUD_2_25` (`WKU` becomes `KU`). If a title omits the year, the year page's is used. A file about two controls (`KND_20_22_i_KND_21_22`) gets a row for each.
+- `kind` (`ex-ante` or `ad-hoc`, from the parent page), `year`, `title`, `filename`, `url`, `size` and `path`.
+- `file_kind`: `result`, `objections_ruling`, `correction`, `recommendations_confirmation`, `annex`, `kio_resolution`, `not_controlled` or `other`, from the title and filename, then the opening of the text.
+- `text_status`: `text`, `ocr` or `empty`.
+- The header fields `authority`, `contract_type`, `subject`, `procedure_type`, `procedure_start`, `notice` (as written), `notice_ids` (normalised), `value` and `result_date`, then `outcome` (`breach` or `no_breach`), `breach_statement`, `breached_articles` (like `art. 99 ust. 4`) and `law` (`2004` or `2019`).
+
+At the end of the crawl, writes one row per control to `controls.json` and `controls.csv`, with the columns of `oecd-poland/analysis/uzp_manifest.csv`, plus `file_kinds`, `law`, `breached_articles` and `breach_statement`. In the CSV, multiple values are joined with `; `. Header fields come from the control's result files first. `outcome` is `not_controlled` if a file says so, `breach` if any result (one per part, for a control split into parts) finds a breach, and otherwise the first outcome found.
+
+Notice numbers are normalised as `YYYY/BZP NNNNNNNN/VV`, `YYYY/S NNN-NNNNNN`, `NNNNNN-N-YYYY` (pre-2021 BZP) and `N-YYYY` (TED eForms, no leading zeros).
+
+Breached articles are read from the breach statement, which opens with *stwierdza naruszenie*, *stwierdzono naruszenie* or *informuje o stwierdzonym naruszeniu* and closes at *UZASADNIENIE* (or, in objections rulings, *Pismem z dnia* or *Zamawiający wniósł*). Articles 596–620 (the control provisions), articles of other statutes and regulations, and articles cited as references (*o którym mowa w*) are excluded, and ranges (`ust. 4-6`) are expanded.
+
+Spider arguments:
+
+- `-a ocr=true`: OCR the PDFs that have no usable text layer, with `tesseract -l pol` on 200 dpi page renders. [Tesseract](https://tesseract-ocr.github.io/) and its Polish language data must be installed (on macOS, `brew install tesseract tesseract-lang`). OCR text is cached under `.scrapy/data/poland_uzp_wyniki_kontroli/_ocrcache/`, so re-runs don't repeat it.
+
+PDFs are cached under `.scrapy/data/poland_uzp_wyniki_kontroli/_httpcache/`. The parent and year pages aren't cached, so new files are found on re-runs.
+
+Caveats:
+
+- About 15% of PDFs are scans, and a few more have a text layer in which every word with a Polish letter is missing (their fonts lack a Unicode map). Both are `text_status=empty` without `-a ocr=true`, and their fields are empty.
+- For some ad-hoc controls, only the objections ruling is published, so the header fields are empty.
+- `outcome` is that of the result, not of any later objections ruling. If the objections are upheld (*uwzględnienie zastrzeżeń*), read the ruling.
+- The parsing is regular expressions over flattened text. OCR errors and unusual layouts can leave fields empty or wrong. A few breaches have no `breached_articles`, because the statement opens unusually (*dopuścił się naruszenia*) or its list is missing from the text layer.
+
 #### `poland_cpv`
 
 Joins KIO rulings and UZP findings to their procurement CPV codes. For each record produced by `poland_kio_orzeczenia` and `poland_uzp_kontrole`, downloads the associated PDF, extracts the first 20 pages with PyMuPDF, regexes out BZP / TED notice numbers, and looks each up:
