@@ -7,6 +7,7 @@ import csv
 import datetime as dt
 import json
 import re
+import zoneinfo
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
@@ -28,6 +29,9 @@ PLATFORM_URL_RE = re.compile(r"Adres strony internetowej prowadzonego postępowa
 TED_OJS_RE = re.compile(r"(\d{4})/S \d{3}-(\d{6})$")
 TED_EFORMS_RE = re.compile(r"\d+-\d{4}$")
 URL_DOCUMENT_RE = re.compile(r"<URL_DOCUMENT>\s*([^<\s]+)")
+REFERENCE_NUMBER_RE = re.compile(r"<REFERENCE_NUMBER>\s*([^<]+?)\s*<")
+PLATFORMAZAKUPOWA_ID_RE = re.compile(r"/transakcja/(\d+)")
+PLATFORMAZAKUPOWA_BUYER_RE = re.compile(r"/pn/([^/?#]+)")
 
 # Documents in this state have no file ("Brak załącznika dla wskazanego dokumentu").
 DELETED_AUTOMATICALLY = "DeletedAutomatically"
@@ -38,11 +42,16 @@ TED_FIELDS = [
     "publication-date",
     "notice-type",
     "procedure-identifier",
+    "internal-identifier-proc",
+    "internal-identifier-lot",
     "deadline-receipt-tender-date-lot",
     *TED_URL_FIELDS,
 ]
 # Board/Search ignores PageSize above 10, so cap the pages read when listing an organization's notices.
 MAX_NOTICE_PAGES = 30
+# The tabs of a buyer's procedure list on platformazakupowa.pl.
+PLATFORMAZAKUPOWA_STATUSES = ("active", "ended", "canceled", "closed")
+WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 
 # Checked in order against the document's name and filename.
 ROLES = [
@@ -136,10 +145,16 @@ def host(url):
     return urlparse(url if "://" in url else f"https://{url}").netloc.lower().split(":")[0].removeprefix("www.")
 
 
+def compact(text):
+    return re.sub(r"\s+", "", text or "").lower()
+
+
 def parse_datetime(value):
-    """Parse an ISO 8601 datetime, or a TED date like ``2026-03-09+01:00``."""
+    """Parse an ISO 8601 datetime, or a TED date like ``2026-03-09+01:00``. Times without offsets are Polish."""
     if not value:
         return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?", value):
+        return dt.datetime.fromisoformat(value).replace(tzinfo=WARSAW)
     value = value.replace("Z", "+00:00")
     # Python 3.10 accepts only 3- or 6-digit fractions.
     value = re.sub(r"\.(\d+)", lambda m: f".{m.group(1)[:6]:0<6}", value)
@@ -191,6 +206,8 @@ class Poland(BaseSpider):
     TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
     TED_XML_URL = "https://ted.europa.eu/en/notice/{n}/xml"
     TED_NOTICE_URL = "https://ted.europa.eu/en/notice/-/detail/{n}"
+    PLATFORMAZAKUPOWA_URL = "https://platformazakupowa.pl/transakcja/{id}"
+    PLATFORMAZAKUPOWA_SEARCH_URL = "https://platformazakupowa.pl/pn/{buyer}/proceedings/ajax?{query}"
 
     custom_settings = {
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
@@ -354,6 +371,14 @@ class Poland(BaseSpider):
             if deadline := self.final_deadline(tender):
                 row["bid_deadline_final"] = max(filter(None, [row["bid_deadline_final"], deadline.isoformat()]))
             row["bid_deadline_original"] = row["bid_deadline_original"] or self.first_deadline(tender)
+        urls = list(dict.fromkeys(u for r in resolutions for u in r.get("urls", [])))
+        platform = {}
+        if not tender_ids and urls and host(urls[0]) == "platformazakupowa.pl":
+            references = list(dict.fromkeys(ref for r in resolutions for ref in r.get("references", [])))
+            platform = await self.collect_platformazakupowa(urls[0], references, directory)
+            row["documents"].extend(platform.get("documents", []))
+            if platform.get("deadline"):
+                row["bid_deadline_final"] = platform["deadline"].isoformat()
         row["documents"].extend(self.ted_documents(ted_notices.values()))
         if not row["bid_deadline_final"] and len(deadlines) > 1:
             row["bid_deadline_final"] = deadlines[-1].isoformat()
@@ -364,25 +389,26 @@ class Poland(BaseSpider):
                 if published := parse_datetime(document.get("published_at")):
                     document["after_deadline"] = published > final
 
+        files = [d for d in row["documents"] if d.get("file_name")]
+        saved = [d for d in files if d.get("path")]
         if tender_ids:
             row["source"] = "ezamowienia"
             row["procedure_url"] = self.PROCEDURE_URL.format(id=tender_ids[0])
-            files = [d for d in row["documents"] if d.get("file_name")]
-            saved = [d for d in files if d.get("path")]
             deleted = sum(d.get("state") == DELETED_AUTOMATICALLY for d in files)
-            if not saved:
-                row["reason"] = f"e-Zamówienia deleted the files ({deleted} of {len(files)} deleted automatically)"
-            elif len(saved) < len(files):
-                row["status"] = "partial"
-                row["reason"] = f"{len(files) - len(saved)} of {len(files)} files unavailable"
-            else:
-                row["status"] = "complete"
-        elif url := next((u for r in resolutions for u in r.get("urls", [])), None):
-            row["source"] = f"platform:{host(url)}"
-            row["procedure_url"] = url
-            row["reason"] = "documents are on another platform"
+            row["reason"] = f"e-Zamówienia deleted the files ({deleted} of {len(files)} deleted automatically)"
+        elif urls:
+            row["source"] = f"platform:{host(urls[0])}"
+            row["procedure_url"] = next(iter(platform.get("urls", [])), urls[0])
+            row["reason"] = platform.get("error") or (
+                "no files on the procedure page" if platform else "no adapter for the platform"
+            )
         else:
             row["reason"] = "; ".join(r["error"] for r in resolutions if r.get("error")) or "no documents URL"
+        if saved:
+            row["status"] = "complete" if len(saved) == len(files) else "partial"
+            row["reason"] = (
+                None if len(saved) == len(files) else f"{len(files) - len(saved)} of {len(files)} files unavailable"
+            )
 
         self.manifest.append(row)
 
@@ -405,9 +431,13 @@ class Poland(BaseSpider):
             if isinstance(tender, dict) and tender.get("isProceedingOnPlatform"):
                 return {**result, "tender_id": hit["tenderId"]}
         response = await self.fetch(self.NOTICE_HTML_URL.format(n=quote(hit["noticeNumber"], safe="")))
-        if response.status == HTTPStatus.OK and (
-            match := PLATFORM_URL_RE.search(_norm(" ".join(response.xpath("//text()").getall())))
-        ):
+        if response.status != HTTPStatus.OK:
+            return {**result, "error": f"{notice}: notice body unavailable (HTTP {response.status})"}
+        items = (item for section in _parse_announcement_html(response.text)["sections"] for item in section["items"])
+        result["references"] = [
+            item["value"] for item in items if item["label"] == "Numer referencyjny" and item["value"]
+        ]
+        if match := PLATFORM_URL_RE.search(_norm(" ".join(response.xpath("//text()").getall()))):
             return {**result, "urls": [match.group(1)]}
         return {**result, "error": f"{notice}: no documents URL in the notice"}
 
@@ -422,13 +452,24 @@ class Poland(BaseSpider):
             procedure_notices = await self.ted_search(f'procedure-identifier="{procedure}"')
             if isinstance(procedure_notices, list) and procedure_notices:
                 notices = procedure_notices
-        result = {"ted_notices": notices, "deadline": self.ted_deadline(notice)}
+        result = {
+            "ted_notices": notices,
+            "deadline": self.ted_deadline(notice),
+            # Fall back to the lots' identifiers, which some buyers use as the procedure's.
+            "references": (
+                [notice["internal-identifier-proc"]]
+                if notice.get("internal-identifier-proc")
+                else list(dict.fromkeys(notice.get("internal-identifier-lot") or []))
+            ),
+        }
 
         urls = next(([u for u in notice.get(field) or [] if u] for field in TED_URL_FIELDS if notice.get(field)), [])
         if not urls:
             response = await self.fetch(self.TED_XML_URL.format(n=publication_number))
             if response.status == HTTPStatus.OK:
                 urls = URL_DOCUMENT_RE.findall(response.text)
+                if match := REFERENCE_NUMBER_RE.search(response.text):
+                    result["references"] = [match.group(1)]
             elif response.status == HTTPStatus.ACCEPTED:
                 return {**result, "error": f"{publication_number}: TED notice XML blocked (HTTP 202)"}
         for url in urls:
@@ -590,6 +631,95 @@ class Poland(BaseSpider):
             else:
                 self.logger.warning("Stopped listing %s notices of %s", notice_type, tender["objectId"])
         return sorted(notices, key=lambda notice: notice.get("publicationDate") or "")
+
+    # Platform adapters, for the notice_numbers mode.
+
+    async def collect_platformazakupowa(self, url, references, directory):
+        """Find the procedure on platformazakupowa.pl and download its files. Return its URLs, deadline and files."""
+        if match := PLATFORMAZAKUPOWA_ID_RE.search(url):
+            ids = [match.group(1)]
+        elif match := PLATFORMAZAKUPOWA_BUYER_RE.search(url):
+            if not references:
+                return {"error": "no reference number to find the procedure on the buyer's page"}
+            ids = await self.platformazakupowa_search(match.group(1), references)
+            if not ids:
+                return {"error": f"no procedure {' or '.join(references)} on the buyer's page"}
+        else:
+            return {"error": "no procedure or buyer in the platformazakupowa.pl URL"}
+
+        result = {"urls": [], "documents": [], "deadline": None}
+        for procedure_id in ids:
+            procedure_url = self.PLATFORMAZAKUPOWA_URL.format(id=procedure_id)
+            response = await self.fetch(procedure_url)
+            if response.status != HTTPStatus.OK:
+                result["error"] = f"procedure page unavailable (HTTP {response.status})"
+                continue
+            # A procedure that requires login redirects to the home page.
+            if not PLATFORMAZAKUPOWA_ID_RE.search(response.url):
+                result["error"] = "procedure page requires login"
+                continue
+            subdirectory = f"platformazakupowa-{procedure_id}"
+            write_bytes(directory / subdirectory / "procedure.html", response.body)
+            result["urls"].append(procedure_url)
+            deadline = response.xpath(
+                "//comment()[contains(., 'OFFERS SUBMITTING DEADLINE')]/following-sibling::li[1]"
+            )
+            if date := deadline.css(".proceeding-info-date::text").get():
+                time = deadline.css(".proceeding-info-time::text").get(default="00:00")
+                result["deadline"] = max(filter(None, [result["deadline"], parse_datetime(f"{date} {time}")]))
+
+            # The attachments table's columns are name, extension, size, date, source and link.
+            for tr in response.xpath("//tr[count(td) = 6][.//a[contains(@href, '/file/get_new/')]]"):
+                name, _, _, published, source = (_text(td) for td in tr.xpath("td")[:5])
+                href = response.urljoin(tr.xpath(".//a[contains(@href, '/file/get_new/')]/@href").get())
+                entry = {
+                    "path": None,
+                    "url": href,
+                    "title": name,
+                    "file_name": name,
+                    "published_at": parse_datetime(published).isoformat() if published else None,
+                    "role": role(name),
+                    "superseded": False,
+                    "state": source,
+                }
+                file_response = await self.fetch(href, cache=True)
+                if file_response.status == HTTPStatus.OK:
+                    filename = UNSAFE_FILENAME_RE.sub("_", f"{Path(urlparse(href).path).stem}__{name}")
+                    path = Path(subdirectory, "attachments", filename)
+                    write_bytes(directory / path, file_response.body)
+                    entry["path"] = str(Path(directory.name, path))
+                else:
+                    entry["error"] = f"HTTP {file_response.status}"
+                result["documents"].append(entry)
+        return result
+
+    async def platformazakupowa_search(self, buyer, references):
+        """Return the IDs of the buyer's procedures whose reference number contains one of ``references``."""
+        ids = []
+        for reference in references:
+            for status in PLATFORMAZAKUPOWA_STATUSES:
+                for page in range(1, MAX_NOTICE_PAGES + 1):
+                    query = urlencode({"status": status, "page": page, "query": reference})
+                    response = await self.fetch(
+                        scrapy.Request(
+                            self.PLATFORMAZAKUPOWA_SEARCH_URL.format(buyer=quote(buyer), query=query),
+                            headers={"X-Requested-With": "XMLHttpRequest"},
+                            meta={"dont_cache": True},
+                            dont_filter=True,
+                        )
+                    )
+                    if response.status != HTTPStatus.OK:
+                        self.logger.warning("platformazakupowa.pl search failed (HTTP %s): %s", response.status, buyer)
+                        break
+                    data = json.loads(response.body)
+                    ids.extend(
+                        str(auction["id"])
+                        for auction in data.get("auctions") or []
+                        if compact(reference) in compact(auction.get("number"))
+                    )
+                    if page >= (data.get("page") or {}).get("last", 1):
+                        break
+        return list(dict.fromkeys(ids))
 
     # HTTP helpers.
 
