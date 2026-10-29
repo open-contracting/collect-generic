@@ -195,6 +195,12 @@ class Poland(BaseSpider):
     custom_settings = {
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
         "DOWNLOAD_DELAY": 0.5,
+        # The TED Search API answers bursts with HTTP 429, and ted.europa.eu with a WAF challenge.
+        "DOWNLOAD_SLOTS": {
+            "api.ted.europa.eu": {"concurrency": 1, "delay": 2},
+            "ted.europa.eu": {"concurrency": 1, "delay": 3},
+        },
+        "RETRY_TIMES": 5,
         # Board/Search can take a minute to answer.
         "DOWNLOAD_TIMEOUT": 180,
         # Only attachments and notice bodies are cached (API calls set dont_cache), so re-runs see new documents.
@@ -407,11 +413,15 @@ class Poland(BaseSpider):
 
     async def resolve_ted(self, publication_number):
         notices = await self.ted_search(f"publication-number={publication_number}")
+        if isinstance(notices, int):
+            return {"error": f"{publication_number}: TED search failed (HTTP {notices})"}
         if not notices:
             return {"error": f"{publication_number}: not found in TED"}
         notice = notices[0]
         if procedure := notice.get("procedure-identifier"):
-            notices = await self.ted_search(f'procedure-identifier="{procedure}"') or notices
+            procedure_notices = await self.ted_search(f'procedure-identifier="{procedure}"')
+            if isinstance(procedure_notices, list) and procedure_notices:
+                notices = procedure_notices
         result = {"ted_notices": notices, "deadline": self.ted_deadline(notice)}
 
         urls = next(([u for u in notice.get(field) or [] if u] for field in TED_URL_FIELDS if notice.get(field)), [])
@@ -626,6 +636,7 @@ class Poland(BaseSpider):
         return (None, {}) if pagination else None
 
     async def ted_search(self, query):
+        """Return the matching notices, or the HTTP status if the search failed."""
         request = JsonRequest(
             self.TED_SEARCH_URL,
             data={"query": query, "fields": TED_FIELDS, "limit": 100},
@@ -635,7 +646,7 @@ class Poland(BaseSpider):
         response = await self.fetch(request)
         if response.status != HTTPStatus.OK:
             self.logger.warning("TED search failed (HTTP %s): %s", response.status, query)
-            return []
+            return response.status
         return json.loads(response.body).get("notices") or []
 
 

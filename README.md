@@ -35,9 +35,9 @@ Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`
 
 Caveats:
 
-- e-Zamówienia deletes the files of closed procedures, usually within a few months. Their documents stay in `documents.json` with state `DeletedAutomatically`, but the download returns HTTP 400 (*Brak załącznika dla wskazanego dokumentu*), so the spider doesn't request them. Files of procedures still in state `Initiated` are kept, however old.
+- e-Zamówienia deletes a procedure's files 3 months after it moves to *Zawarta umowa*, *Unieważnione*, *Anulowane* or *Rozstrzygnięte* (§8(12) of the platform's terms of use). Their documents stay in `documents.json` with state `DeletedAutomatically`, but the download returns HTTP 400 (*Brak załącznika dla wskazanego dokumentu*), so the spider doesn't request them. Files of procedures still in state `Initiated` are kept, however old.
 - Platform adapters aren't written yet. Controls whose documents are on another platform are `not_found` with `source` set to `platform:<host>`. Most documents URLs are the buyer's page on the platform, not the procedure's.
-- `ted.europa.eu` can answer with an AWS WAF challenge (HTTP 202, empty body) instead of the notice XML. Such controls are `unresolved`, with that reason. Re-run later.
+- `ted.europa.eu` can answer with an AWS WAF challenge (HTTP 202, empty body) instead of the notice XML, and the TED Search API with HTTP 429. Such controls are `unresolved`, with that reason. Re-run later.
 - `Board/Search` returns at most 10 results per page, and can time out (the spider retries). The date mode makes about 100 requests per day of notices.
 - TED gives bid deadlines as dates. `bid_deadline_final` comes from the e-Zamówienia tender's valid submission term, when there is one.
 - Follow-up notices (award, agreement, performance) aren't collected. See [#40](https://github.com/open-contracting/collect-generic/issues/40).
