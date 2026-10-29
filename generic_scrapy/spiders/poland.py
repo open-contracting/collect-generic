@@ -80,7 +80,7 @@ class Poland(BaseSpider):
       - attachments/<documentId>__<filename> — one file per non-HTML tender attachment
 
     Output layout: ``<FILES_STORE>/poland/<crawl_directory>/<tenderId>/``. Re-running with the same
-    ``crawl_directory`` skips tenders whose ``tender.json`` is already on disk.
+    ``crawl_time`` skips tenders whose ``tender.json`` is already on disk.
     """
 
     name = "poland"

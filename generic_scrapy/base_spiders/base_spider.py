@@ -34,12 +34,12 @@ class BaseSpider(scrapy.Spider):
 
         If ``date_required`` is ``True``, or if either the ``from_date`` or ``until_date`` spider arguments are set,
         then ``from_date`` defaults to the ``default_from_date`` class attribute, and ``until_date`` defaults to the
-        the current time.
+        current time.
 
     """
 
     # Regarding the data source.
-    date_format = "datetime"
+    date_format = "date"
     date_required = False
 
     # Regarding the output.
@@ -50,7 +50,7 @@ class BaseSpider(scrapy.Spider):
         sample=None,
         from_date=None,
         until_date=None,
-        crawl_directory=None,
+        crawl_time=None,
         *args,
         **kwargs,
     ):
@@ -59,7 +59,7 @@ class BaseSpider(scrapy.Spider):
 
         :param from_date: the date from which to download data (see :ref:`spider-arguments`)
         :param until_date: the date until which to download data (see :ref:`spider-arguments`)
-        :param crawl_time: override the crawl's start time
+        :param crawl_time: override the crawl's start time, which names the crawl directory
         """
         super().__init__(*args, **kwargs)
 
@@ -73,16 +73,13 @@ class BaseSpider(scrapy.Spider):
         self.date_format = VALID_DATE_FORMATS[self.date_format]
 
         # Related to incremental crawls.
-        if crawl_directory:
-            self.crawl_directory = crawl_directory
-        else:
-            self.crawl_directory = dt.datetime.strftime(dt.datetime.now(tz=dt.timezone.utc), "%Y%m%d_%H%M%S")
+        self.crawl_time = crawl_time
 
         spider_arguments = {
             "sample": sample,
             "from_date": from_date,
             "until_date": until_date,
-            "crawl_directory": crawl_directory,
+            "crawl_time": crawl_time,
         }
         spider_arguments.update(kwargs)
 
@@ -104,6 +101,17 @@ class BaseSpider(scrapy.Spider):
                 spider.sample = int(spider.sample)
             except ValueError:
                 raise UsageError(f"spider argument `sample`: invalid integer value: {spider.sample!r}") from None
+
+        if spider.crawl_time:
+            try:
+                spider.crawl_time = dt.datetime.strptime(spider.crawl_time, "%Y-%m-%dT%H:%M:%S").replace(
+                    tzinfo=dt.timezone.utc
+                )
+            except ValueError as e:
+                raise UsageError(f"spider argument `crawl_time`: invalid date value: {e}") from None
+        else:
+            spider.crawl_time = dt.datetime.now(tz=dt.timezone.utc)
+        spider.crawl_directory = spider.crawl_time.strftime("%Y%m%d_%H%M%S")
 
         if spider.from_date or spider.until_date or spider.date_required:
             if not spider.from_date:

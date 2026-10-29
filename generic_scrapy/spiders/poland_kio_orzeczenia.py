@@ -43,7 +43,7 @@ class PolandKioOrzeczenia(BaseSpider):
     # BaseSpider
     export_name = "rulings"
     date_required = True
-    default_from_date = "2023-01-01T00:00:00"
+    default_from_date = "2023-01-01"
 
     def __init__(self, *args, max_id=None, **kwargs):
         super().__init__(*args, **kwargs)
