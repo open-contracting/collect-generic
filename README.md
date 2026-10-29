@@ -12,13 +12,13 @@ Caveats:
 
 #### `poland_kio_orzeczenia`
 
-Walks `/Home/Details/<id>` on `orzeczenia.uzp.gov.pl` and writes one row per ruling (both KIO appeals and KIO/KD control opinions). Discovers the upper ID bound by binary search at startup; pass `-a max_id=N` to skip the probe.
+Walks `/Home/Details/<id>` on `orzeczenia.uzp.gov.pl` and writes one row per ruling (both KIO appeals and KIO/KD control opinions). Discovers the upper ID bound by binary search at startup; pass `-a max_id=N` to skip the probe. Keeps only rulings from 2023 onward by default (compared by year); pass `-a from_date=2016-01-01T00:00:00` to go further back.
 
 Caveats:
 
 - The `articles` field comes from the `Kluczowe przepisy ustawy Pzp` block — an editorial short list maintained by the search engine, not an exhaustive extraction of every article cited in the ruling's body. Use it for "which articles drive disputes", not "every mention".
 - The same KIO archive includes citations under both the current Pzp (2019, in force from 2021) and the prior Pzp 2004. Articles that exist in only one regime can show up with sub-clause combinations that look wrong in the other (e.g., `art. 16 ust. 1` makes sense in Pzp 2004 but not in Pzp 2019, where art. 16 has no `ust.`). The spider preserves these as-is.
-- Some pre-2017 rulings have neither an `issue_date` in the metadata nor a `/YY` year suffix in the case number; those are dropped because their date cannot be determined.
+- Some older rulings (mostly pre-2015) have neither an `issue_date` in the metadata nor a `/YY` year suffix in the case number; those are dropped because their date cannot be determined.
 
 #### `poland_uzp_kontrole`
 
@@ -39,7 +39,12 @@ Joins KIO rulings and UZP findings to their procurement CPV codes. For each reco
 
 Writes one JSONL row per (source, record_id, notice) under `data/poland_cpv/<crawl>/joined.json`, with `notice_kind` set to `BZP` or `TED` so you can tell which source resolved the CPV. CPV codes are normalised to the 8-digit base form (no trailing check digit) so BZP- and TED-resolved codes are directly comparable.
 
-PDF and lookup responses are cached under `data/poland_cpv/_httpcache/`, so re-runs after regex / extraction tweaks don't re-hit the servers.
+PDF and lookup responses are cached under `.scrapy/data/poland_cpv/_httpcache/` (Scrapy resolves a relative `HTTPCACHE_DIR` against the project's `.scrapy` directory), so re-runs after regex / extraction tweaks don't re-hit the servers.
+
+Spider arguments:
+
+- `-a articles=99.1,99.4,433,436`: only process KIO rulings that cite these articles. `N.U` matches art. N ust. U (any pkt); a bare `N` matches art. N (any ust., any pkt).
+- `-a kio_crawl=…` / `-a uzp_crawl=…`: read a specific `crawl_directory` instead of the latest.
 
 PyMuPDF is AGPL-3.0 licensed (the only AGPL dep in this stack). Combining this repo with PyMuPDF means the combined work effectively has to comply with AGPL terms (source disclosure including for network-deployed modified versions). Chosen here for re-processing speed — PyMuPDF extracts the first 20 pages in ~80 ms vs ~3 s for pdfminer, which matters once the PDFs are cached and we're iterating on the regex / extraction logic.
 
@@ -62,5 +67,5 @@ Aggregates PZP-article distributions from the latest `poland_kio_orzeczenia` and
 ```
 scrapy polandpzp                                # latest crawls → CSVs in cwd
 scrapy polandpzp --output-dir ./out
-scrapy polandpzp --kio-crawl 20260603_142206    # specific crawl dirs
+scrapy polandpzp --kio-crawl 20260603_142206    # specific crawl dirs (also --uzp-crawl, --cpv-crawl)
 ```

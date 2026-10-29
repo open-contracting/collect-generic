@@ -22,9 +22,8 @@ PDF_MAX_PAGES = 20
 
 # BZP notice numbers in PDFs are usually written without the version suffix ("2023/BZP 00529765"),
 # but Board/Search accepts both with and without it, so we capture the unsuffixed form and let the
-# server resolve to the latest version. TED notices ("2020/S 013-025754") are captured for the
-# record but are NOT resolved here — Board/Search only indexes BZP, so above-EU-threshold
-# procurements that publish to TED only will surface with notice_number=None and ted_numbers set.
+# server resolve to the latest version. TED notices ("2020/S 013-025754") are resolved via the TED
+# Search API instead, as Board/Search only indexes BZP.
 BZP_NUMBER_RE = re.compile(r"\b\d{4}/BZP\s+\d{6,}", re.IGNORECASE)
 TED_NUMBER_RE = re.compile(r"\b\d{4}/S\s+\d+[-\u2013]\d+", re.IGNORECASE)
 # Maps the human-readable form "2020/S 013-025754" to TED API publication-number "025754-2020".
