@@ -1,3 +1,7 @@
+__review_status__ = "unreviewed"
+__generated_by__ = "claude-code/claude-opus-4-7"
+__generated_at__ = "2026-06-03"
+
 import scrapy
 
 from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
