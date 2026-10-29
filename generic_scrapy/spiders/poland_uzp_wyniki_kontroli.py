@@ -14,7 +14,7 @@ from scrapy.utils.defer import maybe_deferred_to_future
 from scrapy.utils.project import data_path
 from twisted.internet.threads import deferToThread
 
-from generic_scrapy.base_spiders.export_file_spider import ExportFileSpider
+from generic_scrapy.base_spiders.base_spider import BaseSpider
 
 # A text layer that is shorter than this, or in which fewer letters than this ratio have diacritics, is unusable.
 # Some PDFs' fonts lack a Unicode map for Polish letters, so every word containing one is dropped.
@@ -288,7 +288,7 @@ def ocr(body, lang="pol"):
     return "\n".join(pages)
 
 
-class PolandUzpWynikiKontroli(ExportFileSpider):
+class PolandUzpWynikiKontroli(BaseSpider):
     """
     UZP control results (Informacja o wyniku kontroli) from gov.pl/web/uzp, ex-ante 2023 onward, ad-hoc 2021 onward.
 
@@ -304,14 +304,8 @@ class PolandUzpWynikiKontroli(ExportFileSpider):
         "ad-hoc": "https://www.gov.pl/web/uzp/kontrole-od-2021-roku",
     }
 
-    # ExportFileSpider
-    export_outputs = {
-        "main": {
-            "name": "files",
-            "formats": ["json"],
-            "item_filter": None,
-        },
-    }
+    # BaseSpider
+    export_name = "files"
 
     custom_settings = {
         "CONCURRENT_REQUESTS_PER_DOMAIN": 4,
