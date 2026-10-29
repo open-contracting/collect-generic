@@ -30,6 +30,8 @@ A documents URL on `ezamowienia.gov.pl` gives the tender ID. The files go under 
 
 A documents URL on `platformazakupowa.pl` is either the procedure's page (`/transakcja/<id>`) or the buyer's page (`/pn/<buyer>`), in which case the procedure is found by searching the buyer's procedures for the notice's reference number (*Numer referencyjny*, or TED's `internal-identifier-proc`). The spider saves the procedure page and every file in its attachments table under `<control_id>/platformazakupowa-<id>/`, and takes the bid deadline from the page. Files there are public and kept after the procedure closes.
 
+A documents URL on a Marketplanet platform (`*.ezamawiajacy.pl`, `platformazakupowa.plk-sa.pl` or `zamowienia.*.lasy.gov.pl`) is either the procedure's page or the platform's home page, in which case the procedure is found by searching the notice lists linked from the home page (current, during and expired) for the reference number. The spider saves the procedure page, its folders (like *Informacje o wynikach*) and every file in their files tables under `<control_id>/marketplanet-<id>/`, and takes the bid deadline from the page.
+
 The crawl writes:
 
 - `manifest.json`: one JSON line per control, with `control_id`, `group`, `kind`, `notice_ids`, `source` (`ezamowienia`, `platform:<host>` or `unresolved`), `procedure_url`, `tender_ids`, `bid_deadline_original`, `bid_deadline_final`, `status` (`complete`, `partial` or `not_found`), `reason` and `documents`. Each document has `path` (relative to the crawl directory, or null if there's no file), `url`, `title`, `published_at`, `role` (`swz`, `opz`, `ppu`, `annex`, `swz_change`, `qa`, `notice`, `notice_change` or `other`, from its name), `superseded` (deleted by the buyer), `state` and `after_deadline`.
@@ -40,8 +42,8 @@ Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`
 Caveats:
 
 - e-Zamówienia deletes a procedure's files 3 months after it moves to *Zawarta umowa*, *Unieważnione*, *Anulowane* or *Rozstrzygnięte* (§8(12) of the platform's terms of use). Their documents stay in `documents.json` with state `DeletedAutomatically`, but the download returns HTTP 400 (*Brak załącznika dla wskazanego dokumentu*), so the spider doesn't request them. Files of procedures still in state `Initiated` are kept, however old.
-- Only `platformazakupowa.pl` has an adapter. Controls whose documents are on another platform are `not_found` with `source` set to `platform:<host>`. Most documents URLs are the buyer's page on the platform, not the procedure's.
-- On `platformazakupowa.pl`, a file's `state` is the attachments table's source column (e.g. *Proceeding* or *Public message*), and replaced files aren't marked as superseded.
+- Only `platformazakupowa.pl` and Marketplanet have adapters. Controls whose documents are on another platform are `not_found` with `source` set to `platform:<host>`. Most documents URLs are the buyer's page on the platform, not the procedure's.
+- On `platformazakupowa.pl`, a file's `state` is the attachments table's source column (e.g. *Proceeding* or *Public message*), and replaced files aren't marked as superseded. On Marketplanet, it's the files table's heading (e.g. *Pierwotne dokumenty zamówienia* or *Zmiana dokumentów zamówienia*), and downloads aren't cached, because a file's link changes on every page view.
 - `ted.europa.eu` can answer with an AWS WAF challenge (HTTP 202, empty body) instead of the notice XML, and the TED Search API with HTTP 429. Such controls are `unresolved`, with that reason. Re-run later.
 - `Board/Search` returns at most 10 results per page, and can time out (the spider retries). The date mode makes about 100 requests per day of notices.
 - TED gives bid deadlines as dates. `bid_deadline_final` comes from the e-Zamówienia tender's valid submission term, when there is one.

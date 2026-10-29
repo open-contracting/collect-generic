@@ -32,6 +32,12 @@ URL_DOCUMENT_RE = re.compile(r"<URL_DOCUMENT>\s*([^<\s]+)")
 REFERENCE_NUMBER_RE = re.compile(r"<REFERENCE_NUMBER>\s*([^<]+?)\s*<")
 PLATFORMAZAKUPOWA_ID_RE = re.compile(r"/transakcja/(\d+)")
 PLATFORMAZAKUPOWA_BUYER_RE = re.compile(r"/pn/([^/?#]+)")
+# The notice lists' path prefixes, like /pn/lasy/demand/notice/publicpzp/ or /app/demand/notice/public/.
+MARKETPLANET_LIST_RE = re.compile(
+    r"(/(?:pn/[^/\"'?#]+|app)/demand/notice/public(?:pzp)?/)(?:current|during|expired)/list"
+)
+MARKETPLANET_DETAILS_RE = re.compile(r"/demand/(?:notice/public/)?\d+/(?:notice/public/)?details")
+MARKETPLANET_DATETIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?")
 
 # Documents in this state have no file ("Brak załącznika dla wskazanego dokumentu").
 DELETED_AUTOMATICALLY = "DeletedAutomatically"
@@ -51,6 +57,9 @@ TED_FIELDS = [
 MAX_NOTICE_PAGES = 30
 # The tabs of a buyer's procedure list on platformazakupowa.pl.
 PLATFORMAZAKUPOWA_STATUSES = ("active", "ended", "canceled", "closed")
+MARKETPLANET_STATUSES = ("current", "during", "expired")
+# Marketplanet hosts its own platform (ezamawiajacy.pl) and buyers' white-label platforms.
+MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl")
 WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 
 # Checked in order against the document's name and filename.
@@ -153,7 +162,7 @@ def parse_datetime(value):
     """Parse an ISO 8601 datetime, or a TED date like ``2026-03-09+01:00``. Times without offsets are Polish."""
     if not value:
         return None
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?", value):
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?", value):
         return dt.datetime.fromisoformat(value).replace(tzinfo=WARSAW)
     value = value.replace("Z", "+00:00")
     # Python 3.10 accepts only 3- or 6-digit fractions.
@@ -373,9 +382,12 @@ class Poland(BaseSpider):
             row["bid_deadline_original"] = row["bid_deadline_original"] or self.first_deadline(tender)
         urls = list(dict.fromkeys(u for r in resolutions for u in r.get("urls", [])))
         platform = {}
+        references = list(dict.fromkeys(ref for r in resolutions for ref in r.get("references", [])))
         if not tender_ids and urls and host(urls[0]) == "platformazakupowa.pl":
-            references = list(dict.fromkeys(ref for r in resolutions for ref in r.get("references", [])))
             platform = await self.collect_platformazakupowa(urls[0], references, directory)
+        elif not tender_ids and urls and host(urls[0]).endswith(MARKETPLANET_HOSTS):
+            platform = await self.collect_marketplanet(urls[0], references, directory)
+        if platform:
             row["documents"].extend(platform.get("documents", []))
             if platform.get("deadline"):
                 row["bid_deadline_final"] = platform["deadline"].isoformat()
@@ -720,6 +732,114 @@ class Poland(BaseSpider):
                     if page >= (data.get("page") or {}).get("last", 1):
                         break
         return list(dict.fromkeys(ids))
+
+    async def collect_marketplanet(self, url, references, directory):
+        """Find the procedure on Marketplanet and download its files. Return its URLs, deadline and files."""
+        origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
+        if MARKETPLANET_DETAILS_RE.search(url):
+            details_urls = [url]
+        else:
+            if not references:
+                return {"error": "no reference number to find the procedure on the platform"}
+            details_urls = await self.marketplanet_search(origin, references)
+            if details_urls is None:
+                return {"error": "no notice lists on the platform's home page"}
+            if not details_urls:
+                return {"error": f"no procedure {' or '.join(references)} on the platform"}
+
+        result = {"urls": [], "documents": [], "deadline": None}
+        for details_url in details_urls:
+            response = await self.fetch(details_url)
+            if response.status != HTTPStatus.OK or not MARKETPLANET_DETAILS_RE.search(response.url):
+                result["error"] = f"procedure page unavailable (HTTP {response.status})"
+                continue
+            match = re.search(r"/(\d+)/details", response.url)
+            subdirectory = f"marketplanet-{match.group(1)}"
+            result["urls"].append(response.url)
+            deadline = response.xpath(
+                "//fieldset[span[contains(., 'składania ofert') or contains(., 'zbierania ofert')]]/section"
+            ).xpath("normalize-space()")
+            if match := MARKETPLANET_DATETIME_RE.match(deadline.get(default="")):
+                result["deadline"] = max(filter(None, [result["deadline"], parse_datetime(match.group(0))]))
+
+            # The procedure's folders (like the results) are subpages, with the same files table.
+            pages = [("procedure", response)]
+            for href in dict.fromkeys(response.xpath("//a[contains(@href, 'details?folder=')]/@href").getall()):
+                folder = re.search(r"folder=(\w+)", href).group(1)
+                folder_response = await self.fetch(response.urljoin(href))
+                if folder_response.status == HTTPStatus.OK:
+                    pages.append((f"procedure-{folder}", folder_response))
+
+            # Each file's token changes on every page view, so a download can't be cached.
+            tokens = set()
+            for name, page in pages:
+                write_bytes(directory / subdirectory / f"{name}.html", page.body)
+                for tr in page.xpath("//tr[.//input[contains(@name, 'selectedFile')]]"):
+                    token = tr.xpath(".//input[contains(@name, 'selectedFile')]/@value").get()
+                    if token in tokens:
+                        continue
+                    tokens.add(token)
+                    title = _text(tr.xpath("td[contains(@class, 'text')][1]"))
+                    published = MARKETPLANET_DATETIME_RE.match(_text(tr.xpath("td[@class='date-time']")))
+                    entry = {
+                        "path": None,
+                        "url": f"{origin}/repository/download/{token}",
+                        "title": title,
+                        "file_name": title,
+                        "published_at": parse_datetime(published.group(0)).isoformat() if published else None,
+                        "role": role(title),
+                        "superseded": False,
+                        "state": _norm(
+                            tr.xpath("ancestor::div[contains(@class, 'mp_box')][1]//h2").xpath("string()").get()
+                        ),
+                    }
+                    # Some files are hundreds of MB.
+                    request = scrapy.Request(
+                        entry["url"],
+                        method="POST",
+                        meta={"dont_cache": True, "download_timeout": 1800},
+                        dont_filter=True,
+                    )
+                    file_response = await self.fetch(request)
+                    if file_response.status == HTTPStatus.OK:
+                        filename = UNSAFE_FILENAME_RE.sub("_", f"{len(tokens):03d}__{title}")
+                        path = Path(subdirectory, "attachments", filename)
+                        write_bytes(directory / path, file_response.body)
+                        entry["path"] = str(Path(directory.name, path))
+                    else:
+                        entry["error"] = f"HTTP {file_response.status}"
+                    result["documents"].append(entry)
+        return result
+
+    async def marketplanet_search(self, origin, references):
+        """Return the details URLs of the procedures matching a reference, or None if there are no notice lists."""
+        response = await self.fetch(f"{origin}/servlet/HomeServlet")
+        prefixes = list(dict.fromkeys(MARKETPLANET_LIST_RE.findall(response.text if response.status else "")))
+        if not prefixes:
+            return None
+        urls = []
+        for prefix in prefixes:
+            # The PZP lists link to the details page outside the "publicpzp" path.
+            details_prefix = prefix.replace("/publicpzp/", "/public/")
+            for reference in references:
+                for status in MARKETPLANET_STATUSES:
+                    search = await self.fetch(
+                        scrapy.FormRequest(
+                            f"{origin}{prefix}{status}/list",
+                            formdata={"demandNumber": reference},
+                            meta={"dont_cache": True},
+                            dont_filter=True,
+                        )
+                    )
+                    if search.status != HTTPStatus.OK:
+                        self.logger.warning("Marketplanet search failed (HTTP %s): %s", search.status, origin)
+                        continue
+                    urls.extend(
+                        f"{origin}{details_prefix}{tr.attrib['id']}/details"
+                        for tr in search.css("tr.dataRow")
+                        if compact(reference) in compact(_text(tr.xpath("td[1]")))
+                    )
+        return list(dict.fromkeys(urls))
 
     # HTTP helpers.
 
