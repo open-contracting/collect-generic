@@ -4,11 +4,43 @@
 
 #### `poland`
 
-Per-procedure file collector for `ezamowienia.gov.pl`. Walks `Search/SearchTenders` and writes each tender's JSON metadata, tender-document index, raw + parsed BZP announcement, and binary attachments under `data/poland/<crawl_directory>/<tenderId>/`.
+Per-procedure file collector for `ezamowienia.gov.pl`. For each tender, writes:
+
+- `tender.json`: the `Search/GetTender` response.
+- `documents.json`: the `Search/GetTenderDocuments` response, which lists every document version, including deleted ones, with `createDate`, `publishedDate`, `deleteDate` and `deleteReason`.
+- `notices.json`: the tender's contract notice and notice changes, found by listing its organization's notices in `Board/Search` and keeping those with its `tenderId`.
+- `notices/<number>.{html,json}`: each notice's `Board/GetNoticeHtmlBody`, raw and parsed.
+- `attachments/<documentId>__<filename>`: each document that still has a file, from `Tender/DownloadDocument/{tenderId}/{documentId}`.
+
+Entry modes:
+
+- By default, walks `Search/SearchTenders`, which only indexes procedures in state `Initiated`.
+- `-a from_date=2025-03-01 -a until_date=2025-03-31`: walks contract notices in `Board/Search` by publication date (both days included), which reaches closed procedures too. `from_date` defaults to 2021-01-01, when e-Zamówienia opened.
+
+Both write under `data/poland/<crawl_directory>/<tenderId>/`, and skip tenders whose `tender.json` is already on disk.
+
+- `-a notice_numbers=<csv>`: collects the tender documents of UZP controls, for `oecd-poland/analysis/poc/tender_document_requests.csv`. The CSV needs `control_id` and `notice_ids` (`; `-separated BZP, OJ S or eForms notice numbers, normalised as in `poland_uzp_wyniki_kontroli`). Optional `cn_split`, `art124_split` and `missing_identifier` columns set each control's priority group (`cn_test`, `art124_test`, `dev`, `art124_train`, `cn_aux`, assigned in that order), and `-a priority=cn_test,art124_test` selects groups. `-a sample=N` takes the first N controls in priority order.
+
+In the `notice_numbers` mode, each notice is resolved:
+
+- BZP notices via `Board/Search?NoticeNumber=…`. If the procedure isn't run on e-Zamówienia (`isProceedingOnPlatform: false`), the documents URL is read from the notice's *Adres strony internetowej prowadzonego postępowania*.
+- TED notices via the TED Search API: the documents URL (BT-15, or else the restricted-documents or submission URL), and the procedure's other notices (by `procedure-identifier`, for eForms). Pre-eForms notices have the documents URL only in the notice XML (`URL_DOCUMENT`).
+
+A documents URL on `ezamowienia.gov.pl` gives the tender ID. The files go under `data/poland_tender_documents/<crawl_directory>/<control_id>/<tenderId>/`, and the crawl writes:
+
+- `manifest.json`: one JSON line per control, with `control_id`, `group`, `kind`, `notice_ids`, `source` (`ezamowienia`, `platform:<host>` or `unresolved`), `procedure_url`, `tender_ids`, `bid_deadline_original`, `bid_deadline_final`, `status` (`complete`, `partial` or `not_found`), `reason` and `documents`. Each document has `path` (relative to the crawl directory, or null if there's no file), `url`, `title`, `published_at`, `role` (`swz`, `opz`, `ppu`, `annex`, `swz_change`, `qa`, `notice`, `notice_change` or `other`, from its name), `superseded` (deleted by the buyer), `state` and `after_deadline`.
+- `coverage.json`: counts by priority group and status, counts by source, the controls that aren't `complete`, and the controls skipped for having no notice number.
+
+Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`. API responses aren't cached, so re-runs see new documents.
 
 Caveats:
 
-- `Search/SearchTenders` only indexes procedures in state `Initiated`. Tenders that have moved on to award / agreement / performance stages aren't reachable from this catalogue, and the follow-up notices (award, update, performance) aren't captured. See [#40](https://github.com/open-contracting/collect-generic/issues/40) for what was tried.
+- e-Zamówienia deletes the files of closed procedures, usually within a few months. Their documents stay in `documents.json` with state `DeletedAutomatically`, but the download returns HTTP 400 (*Brak załącznika dla wskazanego dokumentu*), so the spider doesn't request them. Files of procedures still in state `Initiated` are kept, however old.
+- Platform adapters aren't written yet. Controls whose documents are on another platform are `not_found` with `source` set to `platform:<host>`. Most documents URLs are the buyer's page on the platform, not the procedure's.
+- `ted.europa.eu` can answer with an AWS WAF challenge (HTTP 202, empty body) instead of the notice XML. Such controls are `unresolved`, with that reason. Re-run later.
+- `Board/Search` returns at most 10 results per page, and can time out (the spider retries). The date mode makes about 100 requests per day of notices.
+- TED gives bid deadlines as dates. `bid_deadline_final` comes from the e-Zamówienia tender's valid submission term, when there is one.
+- Follow-up notices (award, agreement, performance) aren't collected. See [#40](https://github.com/open-contracting/collect-generic/issues/40).
 
 #### `poland_kio_orzeczenia`
 
