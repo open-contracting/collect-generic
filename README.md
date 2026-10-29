@@ -8,7 +8,7 @@ Per-procedure file collector for `ezamowienia.gov.pl`. Walks `Search/SearchTende
 
 Caveats:
 
-- `Search/SearchTenders` only indexes procedures in state `Initiated`. Tenders that have moved on to award / agreement / performance stages aren't reachable from this catalogue, and the follow-up notices (award, update, performance) aren't captured. See the [open follow-up issue](#follow-up-issues) for details.
+- `Search/SearchTenders` only indexes procedures in state `Initiated`. Tenders that have moved on to award / agreement / performance stages aren't reachable from this catalogue, and the follow-up notices (award, update, performance) aren't captured. See [#40](https://github.com/open-contracting/collect-generic/issues/40) for what was tried.
 
 #### `poland_kio_orzeczenia`
 
