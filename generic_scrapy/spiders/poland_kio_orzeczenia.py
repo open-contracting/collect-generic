@@ -2,7 +2,7 @@ __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-4-7"
 __generated_at__ = "2026-06-03"
 
-import datetime
+import datetime as dt
 import re
 import ssl
 import urllib.error
@@ -143,12 +143,7 @@ class PolandKioOrzeczenia(ExportFileSpider):
         if not text:
             return None
         try:
-            return (
-                datetime.datetime.strptime(text.strip(), "%d-%m-%Y")
-                .replace(tzinfo=datetime.timezone.utc)
-                .date()
-                .isoformat()
-            )
+            return dt.datetime.strptime(text.strip(), "%d-%m-%Y").replace(tzinfo=dt.timezone.utc).date().isoformat()
         except ValueError:
             return None
 
