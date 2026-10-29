@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 
 import scrapy
 from scrapy.exceptions import UsageError
@@ -69,9 +69,7 @@ class BaseSpider(scrapy.Spider):
         if crawl_directory:
             self.crawl_directory = crawl_directory
         else:
-            self.crawl_directory = datetime.datetime.strftime(
-                datetime.datetime.now(tz=datetime.timezone.utc), "%Y%m%d_%H%M%S"
-            )
+            self.crawl_directory = dt.datetime.strftime(dt.datetime.now(tz=dt.timezone.utc), "%Y%m%d_%H%M%S")
 
         spider_arguments = {
             "sample": sample,
@@ -103,7 +101,7 @@ class BaseSpider(scrapy.Spider):
                 raise UsageError(f"spider argument `from_date`: invalid date value: {e}") from None
 
             if not spider.until_date:
-                spider.until_date = datetime.datetime.now(tz=datetime.timezone.utc)
+                spider.until_date = dt.datetime.now(tz=dt.timezone.utc)
             try:
                 if isinstance(spider.until_date, str):
                     spider.until_date = spider.parse_date_argument(spider.until_date)
@@ -114,4 +112,4 @@ class BaseSpider(scrapy.Spider):
 
     def parse_date_argument(self, date):
         """Return the date argument as a datetime object."""
-        return datetime.datetime.strptime(date, self.date_format).replace(tzinfo=datetime.timezone.utc)
+        return dt.datetime.strptime(date, self.date_format).replace(tzinfo=dt.timezone.utc)
