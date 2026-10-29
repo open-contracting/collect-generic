@@ -1,3 +1,6 @@
+# https://docs.scrapy.org/en/latest/topics/feed-exports.html#item-filter
+
+
 class UzbekistanAuctionFilter:
     def __init__(self, feed_options):
         self.feed_options = feed_options
