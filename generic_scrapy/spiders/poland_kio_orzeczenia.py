@@ -135,7 +135,7 @@ class PolandKioOrzeczenia(BaseSpider):
         if not text:
             return None
         try:
-            return dt.datetime.strptime(text.strip(), "%d-%m-%Y").replace(tzinfo=dt.UTC).date().isoformat()
+            return dt.date.strptime(text.strip(), "%d-%m-%Y").isoformat()
         except ValueError:
             return None
 
