@@ -104,13 +104,11 @@ class BaseSpider(scrapy.Spider):
 
         if spider.crawl_time:
             try:
-                spider.crawl_time = dt.datetime.strptime(spider.crawl_time, "%Y-%m-%dT%H:%M:%S").replace(
-                    tzinfo=dt.timezone.utc
-                )
+                spider.crawl_time = dt.datetime.strptime(spider.crawl_time, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=dt.UTC)
             except ValueError as e:
                 raise UsageError(f"spider argument `crawl_time`: invalid date value: {e}") from None
         else:
-            spider.crawl_time = dt.datetime.now(tz=dt.timezone.utc)
+            spider.crawl_time = dt.datetime.now(tz=dt.UTC)
         spider.crawl_directory = spider.crawl_time.strftime("%Y%m%d_%H%M%S")
 
         if spider.from_date or spider.until_date or spider.date_required:
@@ -123,7 +121,7 @@ class BaseSpider(scrapy.Spider):
                 raise UsageError(f"spider argument `from_date`: invalid date value: {e}") from None
 
             if not spider.until_date:
-                spider.until_date = dt.datetime.now(tz=dt.timezone.utc)
+                spider.until_date = dt.datetime.now(tz=dt.UTC)
             try:
                 if isinstance(spider.until_date, str):
                     spider.until_date = spider.parse_date_argument(spider.until_date)
@@ -134,4 +132,4 @@ class BaseSpider(scrapy.Spider):
 
     def parse_date_argument(self, date):
         """Return the date argument as a datetime object."""
-        return dt.datetime.strptime(date, self.date_format).replace(tzinfo=dt.timezone.utc)
+        return dt.datetime.strptime(date, self.date_format).replace(tzinfo=dt.UTC)
