@@ -37,6 +37,8 @@ The crawl writes:
 - `manifest.json`: one JSON line per control, with `control_id`, `group`, `kind`, `notice_ids`, `source` (`ezamowienia`, `platform:<host>` or `unresolved`), `procedure_url`, `tender_ids`, `bid_deadline_original`, `bid_deadline_final`, `status` (`complete`, `partial` or `not_found`), `reason` and `documents`. Each document has `path` (relative to the crawl directory, or null if there's no file), `url`, `title`, `published_at`, `role` (`swz`, `opz`, `ppu`, `annex`, `swz_change`, `qa`, `notice`, `notice_change` or `other`, from its name), `superseded` (deleted by the buyer), `state` and `after_deadline`.
 - `coverage.json`: counts by priority group and status, counts by source, the controls that aren't `complete`, and the controls skipped for having no notice number.
 
+The spider collects 4 controls at a time, in priority order, and appends each control's line to `manifest.json` when it finishes (sorted when the crawl closes). To stop a crawl cleanly, send SIGUSR1 to the Scrapy process (not `uv`), like `kill -USR1 $(pgrep -f 'python.*scrapy crawl poland')`: the controls in progress finish, the others are skipped, and the crawl writes `coverage.json`. Re-running with the same `crawl_time` re-collects every control, but skips Marketplanet files already on disk.
+
 Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`. API responses aren't cached, so re-runs see new documents.
 
 Caveats:

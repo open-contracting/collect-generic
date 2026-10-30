@@ -1,12 +1,14 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-10-29"
+__generated_at__ = "2026-10-30"
 
+import asyncio
 import collections
 import csv
 import datetime as dt
 import json
 import re
+import signal
 import zoneinfo
 from http import HTTPStatus
 from pathlib import Path
@@ -60,6 +62,8 @@ PLATFORMAZAKUPOWA_STATUSES = ("active", "ended", "canceled", "closed")
 MARKETPLANET_STATUSES = ("current", "during", "expired")
 # Marketplanet hosts its own platform (ezamawiajacy.pl) and buyers' white-label platforms.
 MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl")
+# Controls collected at a time, in priority order. They share the per-domain download slots.
+CONCURRENT_CONTROLS = 4
 WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 
 # Checked in order against the document's name and filename.
@@ -241,6 +245,9 @@ class Poland(BaseSpider):
         self.notice_numbers = notice_numbers
         self.priority = priority.split(",") if priority else None
         self.manifest = []
+        self.manifest_file = None
+        self.draining = False
+        self.control_slots = asyncio.Semaphore(CONCURRENT_CONTROLS)
         self.skipped = []
         self._yielded = 0
         self._seen = set()
@@ -317,6 +324,12 @@ class Poland(BaseSpider):
     # notice_numbers mode.
 
     def control_requests(self):
+        directory = Path(self.settings["FILES_STORE"], "poland_tender_documents", self.crawl_directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        # Write each control's row when it finishes, so that a crash or forced stop keeps finished controls.
+        self.manifest_file = (directory / "manifest.json").open("w", encoding="utf-8")
+        signal.signal(signal.SIGUSR1, self.drain)
+
         with Path(self.notice_numbers).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         controls = []
@@ -344,7 +357,18 @@ class Poland(BaseSpider):
                 meta={"dont_cache": True},
             )
 
+    def drain(self, _signum, _frame):
+        """Skip the controls not yet started, so the crawl closes once the controls in progress finish."""
+        self.logger.info("Received SIGUSR1, finishing the controls in progress")
+        self.draining = True
+
     async def parse_control(self, _response, control):
+        # The semaphore's waiters are first-in, first-out, so controls start in priority order.
+        async with self.control_slots:
+            if not self.draining:
+                await self.collect_control(control)
+
+    async def collect_control(self, control):
         directory = Path(
             self.settings["FILES_STORE"], "poland_tender_documents", self.crawl_directory, control["control_id"]
         )
@@ -421,6 +445,8 @@ class Poland(BaseSpider):
             )
 
         self.manifest.append(row)
+        self.manifest_file.write(json.dumps(row, ensure_ascii=False) + "\n")
+        self.manifest_file.flush()
 
     async def resolve(self, notice):
         """Resolve a notice number to a tender ID or documents URL, with its notices and bid deadline."""
@@ -531,10 +557,10 @@ class Poland(BaseSpider):
         return terms[0]["term"] if terms else None
 
     def closed(self, _reason):
-        if not self.notice_numbers:
+        if not self.manifest_file:
             return
+        self.manifest_file.close()
         directory = Path(self.settings["FILES_STORE"], "poland_tender_documents", self.crawl_directory)
-        directory.mkdir(parents=True, exist_ok=True)
         self.manifest.sort(key=lambda row: (GROUP_ORDER.get(row["group"], len(GROUP_ORDER)), row["control_id"]))
         with (directory / "manifest.json").open("w", encoding="utf-8") as f:
             f.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in self.manifest)
