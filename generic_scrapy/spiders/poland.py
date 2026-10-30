@@ -32,8 +32,6 @@ TED_OJS_RE = re.compile(r"(\d{4})/S \d{3}-(\d{6})$")
 TED_EFORMS_RE = re.compile(r"\d+-\d{4}$")
 URL_DOCUMENT_RE = re.compile(r"<URL_DOCUMENT>\s*([^<\s]+)")
 REFERENCE_NUMBER_RE = re.compile(r"<REFERENCE_NUMBER>\s*([^<]+?)\s*<")
-PLATFORMAZAKUPOWA_ID_RE = re.compile(r"/transakcja/(\d+)")
-PLATFORMAZAKUPOWA_BUYER_RE = re.compile(r"/pn/([^/?#]+)")
 # The notice lists' path prefixes, like /pn/lasy/demand/notice/publicpzp/ or /app/demand/notice/public/.
 MARKETPLANET_LIST_RE = re.compile(
     r"(/(?:pn/[^/\"'?#]+|app)/demand/notice/public(?:pzp)?/)(?:current|during|expired)/list"
@@ -57,11 +55,13 @@ TED_FIELDS = [
 ]
 # Board/Search ignores PageSize above 10, so cap the pages read when listing an organization's notices.
 MAX_NOTICE_PAGES = 30
-# The tabs of a buyer's procedure list on platformazakupowa.pl.
-PLATFORMAZAKUPOWA_STATUSES = ("active", "ended", "canceled", "closed")
 MARKETPLANET_STATUSES = ("current", "during", "expired")
 # Marketplanet hosts its own platform (ezamawiajacy.pl) and buyers' white-label platforms.
 MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl")
+# Platform files that aren't key documents, downloaded last and only up to MAX_MINOR_FILE_SIZE.
+MINOR_ROLES = {"annex", "other"}
+# Larger annexes are usually design documentation, not the SWZ, OPZ or contract terms.
+MAX_MINOR_FILE_SIZE = 100 * 1024 * 1024
 # Controls collected at a time, in priority order. They share the per-domain download slots.
 CONCURRENT_CONTROLS = 4
 WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
@@ -158,6 +158,15 @@ def host(url):
     return urlparse(url if "://" in url else f"https://{url}").netloc.lower().split(":")[0].removeprefix("www.")
 
 
+def parse_size(text):
+    """Parse a file size like ``731 KB`` or ``0.64 MB`` to bytes."""
+    if match := re.search(r"([\d.,]+)\s*(B|KB|MB|GB)\b", text or "", re.IGNORECASE):
+        return int(
+            float(match.group(1).replace(",", ".")) * 1024 ** ["B", "KB", "MB", "GB"].index(match.group(2).upper())
+        )
+    return None
+
+
 def compact(text):
     return re.sub(r"\s+", "", text or "").lower()
 
@@ -217,8 +226,6 @@ class Poland(BaseSpider):
     TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
     TED_XML_URL = "https://ted.europa.eu/en/notice/{n}/xml"
     TED_NOTICE_URL = "https://ted.europa.eu/en/notice/-/detail/{n}"
-    PLATFORMAZAKUPOWA_URL = "https://platformazakupowa.pl/transakcja/{id}"
-    PLATFORMAZAKUPOWA_SEARCH_URL = "https://platformazakupowa.pl/pn/{buyer}/proceedings/ajax?{query}"
 
     custom_settings = {
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
@@ -240,10 +247,12 @@ class Poland(BaseSpider):
         "DOWNLOAD_WARNSIZE": 128 * 1024 * 1024,
     }
 
-    def __init__(self, *args, notice_numbers=None, priority=None, **kwargs):
+    def __init__(self, *args, notice_numbers=None, priority=None, platforms=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.notice_numbers = notice_numbers
         self.priority = priority.split(",") if priority else None
+        # Platform adapters are opt-in. Check a platform's terms of use before collecting from it.
+        self.platforms = set(platforms.split(",")) if platforms else set()
         self.manifest = []
         self.manifest_file = None
         self.draining = False
@@ -405,9 +414,7 @@ class Poland(BaseSpider):
         urls = list(dict.fromkeys(u for r in resolutions for u in r.get("urls", [])))
         platform = {}
         references = list(dict.fromkeys(ref for r in resolutions for ref in r.get("references", [])))
-        if not tender_ids and urls and host(urls[0]) == "platformazakupowa.pl":
-            platform = await self.collect_platformazakupowa(urls[0], references, directory)
-        elif not tender_ids and urls and host(urls[0]).endswith(MARKETPLANET_HOSTS):
+        if not tender_ids and urls and "marketplanet" in self.platforms and host(urls[0]).endswith(MARKETPLANET_HOSTS):
             platform = await self.collect_marketplanet(urls[0], references, directory)
         if platform:
             row["documents"].extend(platform.get("documents", []))
@@ -670,90 +677,6 @@ class Poland(BaseSpider):
 
     # Platform adapters, for the notice_numbers mode.
 
-    async def collect_platformazakupowa(self, url, references, directory):
-        """Find the procedure on platformazakupowa.pl and download its files. Return its URLs, deadline and files."""
-        if match := PLATFORMAZAKUPOWA_ID_RE.search(url):
-            ids = [match.group(1)]
-        elif match := PLATFORMAZAKUPOWA_BUYER_RE.search(url):
-            if not references:
-                return {"error": "no reference number to find the procedure on the buyer's page"}
-            ids = await self.platformazakupowa_search(match.group(1), references)
-            if not ids:
-                return {"error": f"no procedure {' or '.join(references)} on the buyer's page"}
-        else:
-            return {"error": "no procedure or buyer in the platformazakupowa.pl URL"}
-
-        result = {"urls": [], "documents": [], "deadline": None}
-        files = []
-        for procedure_id in ids:
-            procedure_url = self.PLATFORMAZAKUPOWA_URL.format(id=procedure_id)
-            response = await self.fetch(procedure_url)
-            if response.status != HTTPStatus.OK:
-                result["error"] = f"procedure page unavailable (HTTP {response.status})"
-                continue
-            # A procedure that requires login redirects to the home page.
-            if not PLATFORMAZAKUPOWA_ID_RE.search(response.url):
-                result["error"] = "procedure page requires login"
-                continue
-            subdirectory = f"platformazakupowa-{procedure_id}"
-            write_bytes(directory / subdirectory / "procedure.html", response.body)
-            result["urls"].append(procedure_url)
-            deadline = response.xpath(
-                "//comment()[contains(., 'OFFERS SUBMITTING DEADLINE')]/following-sibling::li[1]"
-            )
-            if date := deadline.css(".proceeding-info-date::text").get():
-                time = deadline.css(".proceeding-info-time::text").get(default="00:00")
-                result["deadline"] = max(filter(None, [result["deadline"], parse_datetime(f"{date} {time}")]))
-
-            # The attachments table's columns are name, extension, size, date, source and link.
-            for tr in response.xpath("//tr[count(td) = 6][.//a[contains(@href, '/file/get_new/')]]"):
-                name, _, _, published, source = (_text(td) for td in tr.xpath("td")[:5])
-                href = response.urljoin(tr.xpath(".//a[contains(@href, '/file/get_new/')]/@href").get())
-                entry = {
-                    "path": None,
-                    "url": href,
-                    "title": name,
-                    "file_name": name,
-                    "published_at": parse_datetime(published).isoformat() if published else None,
-                    "role": role(name),
-                    "superseded": False,
-                    "state": source,
-                }
-                filename = UNSAFE_FILENAME_RE.sub("_", f"{Path(urlparse(href).path).stem}__{name}")
-                path = Path(subdirectory, "attachments", filename)
-                files.append((entry, path, scrapy.Request(href, dont_filter=True)))
-                result["documents"].append(entry)
-        await self.download_files(directory, files)
-        return result
-
-    async def platformazakupowa_search(self, buyer, references):
-        """Return the IDs of the buyer's procedures whose reference number contains one of ``references``."""
-        ids = []
-        for reference in references:
-            for status in PLATFORMAZAKUPOWA_STATUSES:
-                for page in range(1, MAX_NOTICE_PAGES + 1):
-                    query = urlencode({"status": status, "page": page, "query": reference})
-                    response = await self.fetch(
-                        scrapy.Request(
-                            self.PLATFORMAZAKUPOWA_SEARCH_URL.format(buyer=quote(buyer), query=query),
-                            headers={"X-Requested-With": "XMLHttpRequest"},
-                            meta={"dont_cache": True},
-                            dont_filter=True,
-                        )
-                    )
-                    if response.status != HTTPStatus.OK:
-                        self.logger.warning("platformazakupowa.pl search failed (HTTP %s): %s", response.status, buyer)
-                        break
-                    data = json.loads(response.body)
-                    ids.extend(
-                        str(auction["id"])
-                        for auction in data.get("auctions") or []
-                        if compact(reference) in compact(auction.get("number"))
-                    )
-                    if page >= (data.get("page") or {}).get("last", 1):
-                        break
-        return list(dict.fromkeys(ids))
-
     async def collect_marketplanet(self, url, references, directory):
         """Find the procedure on Marketplanet and download its files. Return its URLs, deadline and files."""
         origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
@@ -808,6 +731,7 @@ class Poland(BaseSpider):
                         "url": f"{origin}/repository/download/{token}",
                         "title": title,
                         "file_name": title,
+                        "size": parse_size(_text(tr.xpath("td[contains(@class, 'medium')]"))),
                         "published_at": parse_datetime(published.group(0)).isoformat() if published else None,
                         "role": role(title),
                         "superseded": False,
@@ -818,13 +742,7 @@ class Poland(BaseSpider):
                     path = Path(
                         subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{len(tokens):03d}__{title}")
                     )
-                    # Some files are hundreds of MB.
-                    request = scrapy.Request(
-                        entry["url"],
-                        method="POST",
-                        meta={"dont_cache": True, "download_timeout": 1800},
-                        dont_filter=True,
-                    )
+                    request = scrapy.Request(entry["url"], method="POST", meta={"dont_cache": True}, dont_filter=True)
                     files.append((entry, path, request))
                     result["documents"].append(entry)
         await self.download_files(directory, files)
@@ -862,12 +780,22 @@ class Poland(BaseSpider):
 
     async def download_files(self, directory, files):
         """Download each ``(entry, path, request)``, key documents first, and set the entry's path or error."""
-        for entry, path, request in sorted(files, key=lambda file: file[0]["role"] in {"annex", "other"}):
+        for entry, path, request in sorted(files, key=lambda file: file[0]["role"] in MINOR_ROLES):
             # Re-runs with the same crawl_time resume, as Marketplanet downloads aren't cached.
             if not (directory / path).exists():
+                if entry["role"] in MINOR_ROLES and (entry["size"] or 0) > MAX_MINOR_FILE_SIZE:
+                    entry["error"] = "not downloaded (annex or other file over 100 MB)"
+                    continue
+                # Some files are hundreds of MB, and platforms can send them slowly.
+                request.meta.update({"download_timeout": 1800, "max_retry_times": 1})
                 response = await self.fetch(request)
                 if response.status != HTTPStatus.OK:
                     entry["error"] = f"HTTP {response.status}"
+                    continue
+                # Platforms answer missing files, expired links and blocks with an HTML page.
+                content_type = response.headers.get("Content-Type", b"").decode().lower()
+                if "text/html" in content_type and not path.suffix.lower().startswith(".htm"):
+                    entry["error"] = "HTML page instead of the file"
                     continue
                 write_bytes(directory / path, response.body)
             entry["path"] = str(Path(directory.name, path))
