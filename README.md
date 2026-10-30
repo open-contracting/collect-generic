@@ -26,7 +26,7 @@ In the `notice_numbers` mode, each notice is resolved:
 - BZP notices via `Board/Search?NoticeNumber=…`. If the procedure isn't run on e-Zamówienia (`isProceedingOnPlatform: false`), the documents URL is read from the notice's *Adres strony internetowej prowadzonego postępowania*.
 - TED notices via the TED Search API: the documents URL (BT-15, or else the restricted-documents or submission URL), and the procedure's other notices (by `procedure-identifier`, for eForms). Pre-eForms notices have the documents URL only in the notice XML (`URL_DOCUMENT`).
 
-A documents URL on `ezamowienia.gov.pl` gives the tender ID. The files go under `data/poland_tender_documents/<crawl_directory>/<control_id>/<tenderId>/`.
+A documents URL on `ezamowienia.gov.pl` gives the tender ID. The files go under `data/poland_tender_documents/<control_id>/<tenderId>/` (set `-a output=…` to use another directory under `data/`, like `poland_kio_tender_documents`).
 
 Platform adapters are opt-in, with `-a platforms=marketplanet,logintrade,eb2b`. Check a platform's terms of use and robots.txt before collecting from it. Open Nexus prohibits automated downloading from `platformazakupowa.pl` and has reserved its database against text and data mining (art. 8a of the database protection act), so there is no adapter for it.
 
@@ -38,12 +38,15 @@ With `-a platforms=eb2b`, a documents URL on `*.eb2b.com.pl` is either the proce
 
 On every platform, the spider downloads key documents first, and skips annexes and other files over 100 MB.
 
-The crawl writes:
+The crawl writes, in the output directory:
 
-- `manifest.json`: one JSON line per control, with `control_id`, `group`, `kind`, `notice_ids`, `source` (`ezamowienia`, `platform:<host>` or `unresolved`), `procedure_url`, `tender_ids`, `bid_deadline_original`, `bid_deadline_final`, `status` (`complete`, `partial` or `not_found`), `reason` and `documents`. Each document has `path` (relative to the crawl directory, or null if there's no file), `url`, `title`, `published_at`, `role` (`swz`, `opz`, `ppu`, `annex`, `swz_change`, `qa`, `notice`, `notice_change` or `other`, from its name), `superseded` (deleted by the buyer), `state`, `after_deadline`, `size` (bytes, from a platform's files table) and `error` (why there's no file).
+- `manifest.json`: one JSON line per control, with `control_id`, `group`, `kind`, `notice_ids`, `source` (`ezamowienia`, `platform:<host>` or `unresolved`), `procedure_url`, `tender_ids`, `bid_deadline_original`, `bid_deadline_final`, `status` (`complete`, `partial` or `not_found`), `reason` and `documents`. Each row also has `collection` (`crawl`, or `manual` for documents collected by hand) and, if crawled, `crawl` (the crawl directory's name). Each document has `path` (relative to the output directory, or null if there's no file), `url`, `title`, `published_at`, `role` (`swz`, `opz`, `ppu`, `annex`, `swz_change`, `qa`, `notice`, `notice_change` or `other`, from its name), `superseded` (deleted by the buyer), `state`, `after_deadline`, `size` (bytes, from a platform's files table) and `error` (why there's no file).
+- `runs/<crawl_directory>.jsonl`: this crawl's rows, appended as each control finishes.
 - `coverage.json`: counts by priority group and status, counts by source, the controls that aren't `complete`, and the controls skipped for having no notice number.
 
-The spider collects 4 controls at a time, in priority order, and appends each control's line to `manifest.json` when it finishes (sorted when the crawl closes). To stop a crawl cleanly, send SIGUSR1 to the Scrapy process (not `uv`), like `kill -USR1 $(pgrep -f 'python.*scrapy crawl poland')`: the controls in progress finish, the others are skipped, and the crawl writes `coverage.json`. Re-running with the same `crawl_time` re-collects every control, but skips platform files already on disk.
+When the crawl closes, its rows are merged into `manifest.json`: a row replaces the existing row for its control unless that row has a better status (or, with the same status, more files), or was collected manually. Delete a manual row to re-crawl its control.
+
+The spider collects 4 controls at a time, in priority order. To stop a crawl cleanly, send SIGUSR1 to the Scrapy process (not `uv`), like `kill -USR1 $(pgrep -f 'python.*scrapy crawl poland')`: the controls in progress finish, the others are skipped, and the crawl writes `coverage.json`. A re-run re-collects every control, but skips platform files already on disk.
 
 Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`. API responses aren't cached, so re-runs see new documents.
 

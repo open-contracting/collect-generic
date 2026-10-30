@@ -92,6 +92,7 @@ PRIORITY_GROUPS = [
     ("cn_aux", lambda row: row.get("cn_split") == "aux"),
 ]
 GROUP_ORDER = {name: i for i, (name, _) in enumerate(PRIORITY_GROUPS)}
+STATUSES = ["not_found", "partial", "complete"]
 
 
 def _norm(text):
@@ -150,6 +151,19 @@ def role(*names):
     """Return the document's role (swz, opz, ppu, annex, swz_change, qa, notice, notice_change or other)."""
     text = " ".join(_norm(name).lower().replace("_", " ") for name in names if name)
     return next((name for name, pattern in ROLES if pattern.search(text)), "other")
+
+
+def replaces(row, previous):
+    """Return whether a crawled row replaces the manifest's row, which it does unless that row is better or manual."""
+    if previous is None:
+        return True
+    if previous.get("collection") == "manual":
+        return False
+    return quality(row) >= quality(previous)
+
+
+def quality(row):
+    return STATUSES.index(row["status"]), sum(1 for document in row["documents"] if document.get("path"))
 
 
 def ted_publication_number(notice):
@@ -211,8 +225,9 @@ class Poland(BaseSpider):
 
     The first two modes write to ``<FILES_STORE>/poland/<crawl_directory>/<tenderId>/``. Re-running with the same
     ``crawl_time`` skips tenders whose ``tender.json`` is already on disk. The ``notice_numbers`` mode writes to
-    ``<FILES_STORE>/poland_tender_documents/<crawl_directory>/<control_id>/<tenderId>/``, plus a ``manifest.json``
-    (one JSON line per control) and a ``coverage.json`` report.
+    ``<FILES_STORE>/<output>/<control_id>/<tenderId>/`` (``output`` defaults to ``poland_tender_documents``), logs
+    the crawl's rows to ``runs/<crawl_directory>.jsonl``, and merges them into a ``manifest.json`` (one JSON line per
+    control) and a ``coverage.json`` report.
     """
 
     name = "poland"
@@ -254,9 +269,10 @@ class Poland(BaseSpider):
         "DOWNLOAD_WARNSIZE": 128 * 1024 * 1024,
     }
 
-    def __init__(self, *args, notice_numbers=None, priority=None, platforms=None, **kwargs):
+    def __init__(self, *args, notice_numbers=None, priority=None, platforms=None, output=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.notice_numbers = notice_numbers
+        self.output = output or "poland_tender_documents"
         self.priority = priority.split(",") if priority else None
         # Platform adapters are opt-in. Check a platform's terms of use before collecting from it.
         self.platforms = set(platforms.split(",")) if platforms else set()
@@ -339,11 +355,14 @@ class Poland(BaseSpider):
 
     # notice_numbers mode.
 
+    def output_directory(self):
+        return Path(self.settings["FILES_STORE"], self.output)
+
     def control_requests(self):
-        directory = Path(self.settings["FILES_STORE"], "poland_tender_documents", self.crawl_directory)
+        directory = self.output_directory() / "runs"
         directory.mkdir(parents=True, exist_ok=True)
-        # Write each control's row when it finishes, so that a crash or forced stop keeps finished controls.
-        self.manifest_file = (directory / "manifest.json").open("w", encoding="utf-8")
+        # Log each control's row when it finishes, so that a crash or forced stop keeps finished controls.
+        self.manifest_file = (directory / f"{self.crawl_directory}.jsonl").open("a", encoding="utf-8")
         signal.signal(signal.SIGUSR1, self.drain)
 
         with Path(self.notice_numbers).open(encoding="utf-8") as f:
@@ -385,9 +404,7 @@ class Poland(BaseSpider):
                 await self.collect_control(control)
 
     async def collect_control(self, control):
-        directory = Path(
-            self.settings["FILES_STORE"], "poland_tender_documents", self.crawl_directory, control["control_id"]
-        )
+        directory = self.output_directory() / control["control_id"]
         row = {
             "control_id": control["control_id"],
             "group": control["group"],
@@ -401,6 +418,8 @@ class Poland(BaseSpider):
             "documents": [],
             "status": "not_found",
             "reason": None,
+            "collection": "crawl",
+            "crawl": self.crawl_directory,
         }
         resolutions = [await self.resolve(notice) for notice in control["notices"]]
         tender_ids = list(dict.fromkeys(r["tender_id"] for r in resolutions if r.get("tender_id")))
@@ -582,22 +601,31 @@ class Poland(BaseSpider):
         if not self.manifest_file:
             return
         self.manifest_file.close()
-        directory = Path(self.settings["FILES_STORE"], "poland_tender_documents", self.crawl_directory)
-        self.manifest.sort(key=lambda row: (GROUP_ORDER.get(row["group"], len(GROUP_ORDER)), row["control_id"]))
+        directory = self.output_directory()
+        rows = {}
+        if (directory / "manifest.json").exists():
+            with (directory / "manifest.json").open(encoding="utf-8") as f:
+                rows = {row["control_id"]: row for row in map(json.loads, f)}
+        for row in self.manifest:
+            if replaces(row, rows.get(row["control_id"])):
+                rows[row["control_id"]] = row
+        manifest = sorted(
+            rows.values(), key=lambda row: (GROUP_ORDER.get(row["group"], len(GROUP_ORDER)), row["control_id"])
+        )
         with (directory / "manifest.json").open("w", encoding="utf-8") as f:
-            f.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in self.manifest)
+            f.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in manifest)
 
         counts = collections.defaultdict(collections.Counter)
-        for row in self.manifest:
+        for row in manifest:
             counts[row["group"]][row["status"]] += 1
         for control in self.skipped:
             counts[control["group"]]["skipped"] += 1
         coverage = {
             "by_group": {group: dict(counter) for group, counter in counts.items()},
-            "by_source": dict(collections.Counter(row["source"] for row in self.manifest).most_common()),
+            "by_source": dict(collections.Counter(row["source"] for row in manifest).most_common()),
             "not_found": [
                 {key: row[key] for key in ("control_id", "group", "notice_ids", "source", "procedure_url", "reason")}
-                for row in self.manifest
+                for row in manifest
                 if row["status"] != "complete"
             ],
             "skipped": [{key: c[key] for key in ("control_id", "group")} for c in self.skipped],
