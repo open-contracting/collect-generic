@@ -75,13 +75,14 @@ WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 # Checked in order against the document's name and filename.
 ROLES = [
     ("notice_change", re.compile(r"zmian\w* ogłosz|ogłoszeni\w* o zmianie|sprostowani")),
-    ("swz_change", re.compile(r"zmian\w* (?:treści )?(?:swz|specyfikacji)|modyfikacj")),
+    ("swz_change", re.compile(r"zmian\w* (?:treści )?(?:swz|idw|specyfikacji|instrukcji dla wykonawc)|modyfikacj")),
     ("qa", re.compile(r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp")),
     ("opz", re.compile(r"\bs?opz\b|opis\w* przedmiotu zamówienia|\bpfu\b|program\w* funkcjonalno")),
     ("ppu", re.compile(r"\bppu\b|projektowan\w* postanowie|wz[oó]r umowy|istotne postanowienia")),
     ("notice", re.compile(r"^ogłoszeni|\bojs\d{3}\b")),
     ("annex", re.compile(r"załącznik|\bza[lł]\.?\s*(?:nr|\d)|\bzal\b")),
-    ("swz", re.compile(r"\bswz\b|specyfikacj\w* warunków zamówienia")),
+    # Some buyers (e.g. PKP PLK) call the SWZ the "Instrukcja dla Wykonawców" (IDW).
+    ("swz", re.compile(r"\bswz\b|specyfikacj\w* warunków zamówienia|\bidw\b|instrukcj\w* dla wykonawc")),
 ]
 PRIORITY_GROUPS = [
     ("cn_test", lambda row: row.get("cn_split") == "test"),
