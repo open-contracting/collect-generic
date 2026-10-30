@@ -19,6 +19,7 @@ from scrapy.http import JsonRequest
 
 from generic_scrapy.base_spiders.base_spider import BaseSpider
 
+HTML_PAGE_ERROR = "HTML page instead of the file"
 HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
 UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -39,6 +40,10 @@ MARKETPLANET_LIST_RE = re.compile(
 )
 MARKETPLANET_DETAILS_RE = re.compile(r"/demand/(?:notice/public/)?\d+/(?:notice/public/)?details")
 MARKETPLANET_DATETIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?")
+LOGINTRADE_PROCEDURE_RE = re.compile(r"/zapytania_email,(\d+),\w+\.html")
+LOGINTRADE_DATETIME_RE = re.compile(r"(\d{2})\.(\d{2})\.(\d{4}) - (\d{2}:\d{2})")
+EB2B_PROCEDURE_RE = re.compile(r"/open-preview-auction\.html/(\d+)")
+EB2B_PARAMS_PREFIX = 'App.initController("AuctionPreviewOpen", '
 
 # Documents in this state have no file ("Brak załącznika dla wskazanego dokumentu").
 DELETED_AUTOMATICALLY = "DeletedAutomatically"
@@ -72,7 +77,7 @@ ROLES = [
     ("notice_change", re.compile(r"zmian\w* ogłosz|ogłoszeni\w* o zmianie|sprostowani")),
     ("swz_change", re.compile(r"zmian\w* (?:treści )?(?:swz|specyfikacji)|modyfikacj")),
     ("qa", re.compile(r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp")),
-    ("opz", re.compile(r"\bopz\b|opis\w* przedmiotu zamówienia|\bpfu\b|program\w* funkcjonalno")),
+    ("opz", re.compile(r"\bs?opz\b|opis\w* przedmiotu zamówienia|\bpfu\b|program\w* funkcjonalno")),
     ("ppu", re.compile(r"\bppu\b|projektowan\w* postanowie|wz[oó]r umowy|istotne postanowienia")),
     ("notice", re.compile(r"^ogłoszeni|\bojs\d{3}\b")),
     ("annex", re.compile(r"załącznik|\bza[lł]\.?\s*(?:nr|\d)|\bzal\b")),
@@ -169,7 +174,7 @@ def parse_size(text):
 
 
 def compact(text):
-    return re.sub(r"\s+", "", text or "").lower()
+    return re.sub(r"\s+", "", text or "").lower().replace("\u2013", "-").replace("\u2014", "-")
 
 
 def parse_datetime(value):
@@ -417,6 +422,10 @@ class Poland(BaseSpider):
         references = list(dict.fromkeys(ref for r in resolutions for ref in r.get("references", [])))
         if not tender_ids and urls and "marketplanet" in self.platforms and host(urls[0]).endswith(MARKETPLANET_HOSTS):
             platform = await self.collect_marketplanet(urls[0], references, directory)
+        elif not tender_ids and urls and "logintrade" in self.platforms and host(urls[0]).endswith("logintrade.net"):
+            platform = await self.collect_logintrade(urls[0], references, directory)
+        elif not tender_ids and urls and "eb2b" in self.platforms and host(urls[0]).endswith("eb2b.com.pl"):
+            platform = await self.collect_eb2b(urls[0], references, directory)
         if platform:
             row["documents"].extend(platform.get("documents", []))
             if platform.get("deadline"):
@@ -441,9 +450,13 @@ class Poland(BaseSpider):
         elif urls:
             row["source"] = f"platform:{host(urls[0])}"
             row["procedure_url"] = next(iter(platform.get("urls", [])), urls[0])
-            row["reason"] = platform.get("error") or (
-                "no files on the procedure page" if platform else "no adapter for the platform"
-            )
+            errors = collections.Counter(d["error"] for d in files if d.get("error"))
+            if files and errors:
+                row["reason"] = "no file downloaded: " + "; ".join(f"{e} ({n})" for e, n in errors.most_common())
+            else:
+                row["reason"] = platform.get("error") or (
+                    "no files on the procedure page" if platform else "no adapter for the platform"
+                )
         else:
             row["reason"] = "; ".join(r["error"] for r in resolutions if r.get("error")) or "no documents URL"
         if saved:
@@ -694,6 +707,7 @@ class Poland(BaseSpider):
 
         result = {"urls": [], "documents": [], "deadline": None}
         files = []
+        procedures = []
         for details_url in details_urls:
             response = await self.fetch(details_url)
             if response.status != HTTPStatus.OK or not MARKETPLANET_DETAILS_RE.search(response.url):
@@ -715,39 +729,61 @@ class Poland(BaseSpider):
                 folder_response = await self.fetch(response.urljoin(href))
                 if folder_response.status == HTTPStatus.OK:
                     pages.append((f"procedure-{folder}", folder_response))
-
-            # Each file's token changes on every page view, so a download can't be cached.
-            tokens = set()
             for name, page in pages:
                 write_bytes(directory / subdirectory / f"{name}.html", page.body)
-                for tr in page.xpath("//tr[.//input[contains(@name, 'selectedFile')]]"):
-                    token = tr.xpath(".//input[contains(@name, 'selectedFile')]/@value").get()
-                    if token in tokens:
-                        continue
-                    tokens.add(token)
-                    title = _text(tr.xpath("td[contains(@class, 'text')][1]"))
-                    published = MARKETPLANET_DATETIME_RE.match(_text(tr.xpath("td[@class='date-time']")))
-                    entry = {
-                        "path": None,
-                        "url": f"{origin}/repository/download/{token}",
-                        "title": title,
-                        "file_name": title,
-                        "size": parse_size(_text(tr.xpath("td[contains(@class, 'medium')]"))),
-                        "published_at": parse_datetime(published.group(0)).isoformat() if published else None,
-                        "role": role(title),
-                        "superseded": False,
-                        "state": _norm(
-                            tr.xpath("ancestor::div[contains(@class, 'mp_box')][1]//h2").xpath("string()").get()
-                        ),
-                    }
-                    path = Path(
-                        subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{len(tokens):03d}__{title}")
-                    )
-                    request = scrapy.Request(entry["url"], method="POST", meta={"dont_cache": True}, dont_filter=True)
-                    files.append((entry, path, request))
-                    result["documents"].append(entry)
+            procedure_files = self.marketplanet_files(pages, origin, subdirectory)
+            procedures.append((subdirectory, [(name, page.url) for name, page in pages]))
+            files.extend(procedure_files)
+            result["documents"].extend(entry for entry, _, _ in procedure_files)
         await self.download_files(directory, files)
+
+        # A file's link expires a while after the page view, so re-read the pages for new links, and retry.
+        for _ in range(2):
+            expired = {path: entry for entry, path, _ in files if entry.get("error") == HTML_PAGE_ERROR}
+            if not expired:
+                break
+            retry = []
+            for subdirectory, page_urls in procedures:
+                pages = [(name, await self.fetch(page_url)) for name, page_url in page_urls]
+                pages = [(name, page) for name, page in pages if page.status == HTTPStatus.OK]
+                for _, path, request in self.marketplanet_files(pages, origin, subdirectory):
+                    if entry := expired.get(path):
+                        entry.pop("error")
+                        entry["url"] = request.url
+                        retry.append((entry, path, request))
+            await self.download_files(directory, retry)
         return result
+
+    def marketplanet_files(self, pages, origin, subdirectory):
+        """Return the ``(entry, path, request)`` of each file in the pages' files tables."""
+        files = []
+        tokens = set()
+        for _, page in pages:
+            for tr in page.xpath("//tr[.//input[contains(@name, 'selectedFile')]]"):
+                token = tr.xpath(".//input[contains(@name, 'selectedFile')]/@value").get()
+                if token in tokens:
+                    continue
+                tokens.add(token)
+                title = _text(tr.xpath("td[contains(@class, 'text')][1]"))
+                published = MARKETPLANET_DATETIME_RE.match(_text(tr.xpath("td[@class='date-time']")))
+                entry = {
+                    "path": None,
+                    "url": f"{origin}/repository/download/{token}",
+                    "title": title,
+                    "file_name": title,
+                    "size": parse_size(_text(tr.xpath("td[contains(@class, 'medium')]"))),
+                    "published_at": parse_datetime(published.group(0)).isoformat() if published else None,
+                    "role": role(title),
+                    "superseded": False,
+                    "state": _norm(
+                        tr.xpath("ancestor::div[contains(@class, 'mp_box')][1]//h2").xpath("string()").get()
+                    ),
+                }
+                # The path is from the file's position, as its link changes. Downloads can't be cached.
+                path = Path(subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{len(tokens):03d}__{title}"))
+                request = scrapy.Request(entry["url"], method="POST", meta={"dont_cache": True}, dont_filter=True)
+                files.append((entry, path, request))
+        return files
 
     async def marketplanet_search(self, origin, references):
         """Return the details URLs of the procedures matching a reference, or None if there are no notice lists."""
@@ -779,6 +815,172 @@ class Poland(BaseSpider):
                     )
         return list(dict.fromkeys(urls))
 
+    async def collect_logintrade(self, url, references, directory):
+        """Find the procedure on Logintrade and download its files. Return its URLs, deadline and files."""
+        origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
+        if LOGINTRADE_PROCEDURE_RE.search(url):
+            procedure_urls = [url]
+        else:
+            if not references:
+                return {"error": "no reference number to find the procedure on the platform"}
+            procedure_urls = []
+            for reference in references:
+                # The statutory (PZP) procedures, in any state.
+                query = urlencode({"status": "", "szukaj": reference})
+                search = await self.fetch(f"{origin}/rejestracja/ustawowe.html?{query}")
+                if search.status != HTTPStatus.OK:
+                    self.logger.warning("Logintrade search failed (HTTP %s): %s", search.status, origin)
+                    continue
+                for a in search.xpath("//tr[td]//a[contains(@href, 'zapytania_email')]"):
+                    if compact(reference) in compact(_text(a.xpath("ancestor::tr[1]/td[3]"))):
+                        procedure_urls.append(search.urljoin(a.attrib["href"]))
+            procedure_urls = list(dict.fromkeys(procedure_urls))
+            if not procedure_urls:
+                return {"error": f"no procedure {' or '.join(references)} on the platform"}
+
+        result = {"urls": [], "documents": [], "deadline": None}
+        files = []
+        for procedure_url in procedure_urls:
+            response = await self.fetch(procedure_url)
+            match = LOGINTRADE_PROCEDURE_RE.search(response.url)
+            if response.status != HTTPStatus.OK or not match:
+                result["error"] = f"procedure page unavailable (HTTP {response.status})"
+                continue
+            subdirectory = f"logintrade-{match.group(1)}"
+            write_bytes(directory / subdirectory / "procedure.html", response.body)
+            result["urls"].append(response.url)
+            # Scrapy is served the English page.
+            deadline = response.xpath(
+                "//h4[normalize-space() = 'Termin składania' or normalize-space() = 'Deadline for making offers']"
+                "/following-sibling::div[1]"
+            )
+            if match := MARKETPLANET_DATETIME_RE.match(_text(deadline)):
+                result["deadline"] = max(filter(None, [result["deadline"], parse_datetime(match.group(0))]))
+
+            # The page can list an attachment twice (e.g. under the notice and in the document list).
+            hrefs = set()
+            for div in response.css("div.attachment"):
+                href = div.xpath(".//a[contains(@href, 'getAttachmentUnlogged')]/@href").get()
+                if not href or href in hrefs:
+                    continue
+                hrefs.add(href)
+                title = _text(div.css(".attachment-name"))
+                published = LOGINTRADE_DATETIME_RE.match(_text(div.css(".attachment-date")))
+                entry = {
+                    "path": None,
+                    "url": response.urljoin(href),
+                    "title": title,
+                    "file_name": title,
+                    "size": parse_size(_text(div.css(".attachment-size"))),
+                    "published_at": (
+                        parse_datetime("{2}-{1}-{0} {3}".format(*published.groups())).isoformat()
+                        if published
+                        else None
+                    ),
+                    "role": role(title),
+                    "superseded": False,
+                    "state": None,
+                }
+                path = Path(subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{len(hrefs):03d}__{title}"))
+                files.append((entry, path, scrapy.Request(entry["url"], dont_filter=True)))
+                result["documents"].append(entry)
+        await self.download_files(directory, files)
+        return result
+
+    async def collect_eb2b(self, url, references, directory):
+        """Find the procedure on eB2B and download its files. Return its URLs, deadline and files."""
+        origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
+        if match := EB2B_PROCEDURE_RE.search(url):
+            ids = [match.group(1)]
+        else:
+            if not references:
+                return {"error": "no reference number to find the procedure on the platform"}
+            ids = await self.eb2b_search(origin, references)
+            if not ids:
+                return {"error": f"no procedure {' or '.join(references)} on the platform"}
+
+        result = {"urls": [], "documents": [], "deadline": None}
+        files = []
+        for procedure_id in ids:
+            procedure_url = f"{origin}/open-preview-auction.html/{procedure_id}"
+            response = await self.fetch(self.eb2b_request(procedure_url))
+            start = response.text.find(EB2B_PARAMS_PREFIX) if response.status == HTTPStatus.OK else -1
+            if start == -1:
+                result["error"] = (
+                    "procedure not public on the platform"
+                    if response.status == HTTPStatus.OK
+                    else f"procedure page unavailable (HTTP {response.status})"
+                )
+                continue
+            auction = json.JSONDecoder().raw_decode(response.text, start + len(EB2B_PARAMS_PREFIX))[0]["auction"]
+            subdirectory = f"eb2b-{procedure_id}"
+            write_bytes(directory / subdirectory / "procedure.html", response.body)
+            result["urls"].append(procedure_url)
+            end = auction.get("stage_offers_end_date") or auction.get("offers_attachments_deadline_date") or ""
+            if deadline := parse_datetime(end[:16] or None):
+                result["deadline"] = max(filter(None, [result["deadline"], deadline]))
+            if not auction.get("attachments_public_access"):
+                result["error"] = "attachments are only for registered participants"
+                continue
+
+            query = urlencode({"id": procedure_id, "deleted": 0, "bidder": 0})
+            listing = await self.fetch(self.eb2b_request(f"{origin}/auction/auction/list-attachment?{query}"))
+            if listing.status != HTTPStatus.OK:
+                result["error"] = f"attachments list unavailable (HTTP {listing.status})"
+                continue
+            write_bytes(directory / subdirectory / "attachments.json", listing.body)
+            for attachment in json.loads(listing.body).get("data") or []:
+                name = attachment["name"]
+                if attachment.get("extension") and not name.lower().endswith(f".{attachment['extension'].lower()}"):
+                    name = f"{name}.{attachment['extension']}"
+                published = (attachment.get("publication_date") or attachment.get("created_at") or "")[:16]
+                entry = {
+                    "path": None,
+                    "url": f"{origin}/auction/auction/download-attachment/id/{attachment['id']}",
+                    "title": attachment["name"],
+                    "file_name": name,
+                    "size": attachment.get("size"),
+                    "published_at": parse_datetime(published).isoformat() if published else None,
+                    "role": role(attachment["name"], name),
+                    "superseded": attachment.get("is_current") is False,
+                    "state": attachment.get("type_name"),
+                }
+                path = Path(subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{attachment['id']}__{name}"))
+                files.append((entry, path, self.eb2b_request(entry["url"])))
+                result["documents"].append(entry)
+        await self.download_files(directory, files)
+        return result
+
+    @staticmethod
+    def eb2b_request(url):
+        # The English pages of some procedures are an error page. Downloads redirect to signed S3 URLs that expire.
+        return scrapy.Request(url, headers={"Accept-Language": "pl"}, meta={"dont_cache": True}, dont_filter=True)
+
+    async def eb2b_search(self, origin, references):
+        """Return the IDs of the public procedures whose number contains one of ``references``."""
+        ids = []
+        for reference in references:
+            # The filter matches substrings. If the full reference misses (e.g. on dashes, or if the notice's
+            # reference includes the title), try its parts that look like reference numbers (e.g. DZZK/7/BM/2024).
+            parts = [part for part in reference.split() if re.fullmatch(r"(?=.*\d)(?=.*[./-])\S{6,}", part)]
+            for value in dict.fromkeys([reference, *parts]):
+                query = urlencode(
+                    {"filter": json.dumps([{"property": "auction_number", "value": value}]), "start": 0, "limit": 100}
+                )
+                response = await self.fetch(self.eb2b_request(f"{origin}/auction/auction/list?{query}"))
+                if response.status != HTTPStatus.OK:
+                    self.logger.warning("eB2B search failed (HTTP %s): %s", response.status, origin)
+                    break
+                matches = [
+                    str(auction["id"])
+                    for auction in json.loads(response.body).get("data") or []
+                    if compact(value) in compact(auction.get("auction_number"))
+                ]
+                if matches:
+                    ids.extend(matches)
+                    break
+        return list(dict.fromkeys(ids))
+
     async def download_files(self, directory, files):
         """Download each ``(entry, path, request)``, key documents first, and set the entry's path or error."""
         for entry, path, request in sorted(files, key=lambda file: file[0]["role"] in MINOR_ROLES):
@@ -796,7 +998,7 @@ class Poland(BaseSpider):
                 # Platforms answer missing files, expired links and blocks with an HTML page. Check the body, not
                 # the Content-Type, which some servers set to text/html for real documents.
                 if HTML_RE.match(response.body[:512]) and not path.suffix.lower().startswith(".htm"):
-                    entry["error"] = "HTML page instead of the file"
+                    entry["error"] = HTML_PAGE_ERROR
                     continue
                 write_bytes(directory / path, response.body)
             entry["path"] = str(Path(directory.name, path))
