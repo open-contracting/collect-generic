@@ -791,6 +791,14 @@ class Poland(BaseSpider):
                             tr.xpath("ancestor::div[contains(@class, 'mp_box')][1]//h2").xpath("string()").get()
                         ),
                     }
+                    path = Path(
+                        subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{len(tokens):03d}__{title}")
+                    )
+                    result["documents"].append(entry)
+                    # Re-runs with the same crawl_time resume, as downloads aren't cached.
+                    if (directory / path).exists():
+                        entry["path"] = str(Path(directory.name, path))
+                        continue
                     # Some files are hundreds of MB.
                     request = scrapy.Request(
                         entry["url"],
@@ -800,13 +808,10 @@ class Poland(BaseSpider):
                     )
                     file_response = await self.fetch(request)
                     if file_response.status == HTTPStatus.OK:
-                        filename = UNSAFE_FILENAME_RE.sub("_", f"{len(tokens):03d}__{title}")
-                        path = Path(subdirectory, "attachments", filename)
                         write_bytes(directory / path, file_response.body)
                         entry["path"] = str(Path(directory.name, path))
                     else:
                         entry["error"] = f"HTTP {file_response.status}"
-                    result["documents"].append(entry)
         return result
 
     async def marketplanet_search(self, origin, references):
