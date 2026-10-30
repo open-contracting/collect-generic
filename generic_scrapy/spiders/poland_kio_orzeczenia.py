@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-4-7"
-__generated_at__ = "2026-06-03"
+__generated_at__ = "2026-10-30"
 
 import datetime as dt
 import re
@@ -45,9 +45,10 @@ class PolandKioOrzeczenia(BaseSpider):
     date_required = True
     default_from_date = "2023-01-01"
 
-    def __init__(self, *args, max_id=None, **kwargs):
+    def __init__(self, *args, max_id=None, min_id=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_id = int(max_id) if max_id else None
+        self.min_id = int(min_id) if min_id else 1
         self._yielded = 0
 
     @classmethod
@@ -65,7 +66,7 @@ class PolandKioOrzeczenia(BaseSpider):
         # max_id surfaces the post-2023 window first — important when --sample is set, and a
         # natural ordering even for a full crawl. start() is consumed lazily by the engine, so
         # raising CloseSpider in parse_detail stops the scheduler asking for more.
-        for record_id in range(self.max_id, 0, -1):
+        for record_id in range(self.max_id, self.min_id - 1, -1):
             yield scrapy.Request(
                 f"{self.base_url}/{record_id}",
                 callback=self.parse_detail,

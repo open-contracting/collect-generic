@@ -53,7 +53,7 @@ Caveats:
 
 #### `poland_kio_orzeczenia`
 
-Walks `/Home/Details/<id>` on `orzeczenia.uzp.gov.pl` and writes one row per ruling (both KIO appeals and KIO/KD control opinions). Discovers the upper ID bound by binary search at startup; pass `-a max_id=N` to skip the probe. Keeps only rulings from 2023 onward by default (compared by year); pass `-a from_date=2016-01-01` to go further back.
+Walks `/Home/Details/<id>` on `orzeczenia.uzp.gov.pl` and writes one row per ruling (both KIO appeals and KIO/KD control opinions). Discovers the upper ID bound by binary search at startup; pass `-a max_id=N` to skip the probe, and `-a min_id=N` to stop at an ID (e.g. the previous crawl's highest, to collect only new rulings). Keeps only rulings from 2023 onward by default (compared by year); pass `-a from_date=2016-01-01` to go further back.
 
 Caveats:
 
