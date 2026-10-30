@@ -165,8 +165,6 @@ def parse_datetime(value):
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?", value):
         return dt.datetime.fromisoformat(value).replace(tzinfo=WARSAW)
     value = value.replace("Z", "+00:00")
-    # Python 3.10 accepts only 3- or 6-digit fractions.
-    value = re.sub(r"\.(\d+)", lambda m: f".{m.group(1)[:6]:0<6}", value)
     if re.match(r"\d{4}-\d{2}-\d{2}[+-]", value):
         value = f"{value[:10]}T23:59:59{value[10:]}"
     return dt.datetime.fromisoformat(value)
