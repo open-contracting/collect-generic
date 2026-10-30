@@ -135,7 +135,7 @@ class PolandKioOrzeczenia(BaseSpider):
         if not text:
             return None
         try:
-            return dt.datetime.strptime(text.strip(), "%d-%m-%Y").replace(tzinfo=dt.UTC).date().isoformat()
+            return dt.date.strptime(text.strip(), "%d-%m-%Y").isoformat()
         except ValueError:
             return None
 
@@ -156,7 +156,7 @@ def _discover_max_id(user_agent, start_guess=DISCOVERY_START_GUESS, sanity_cap=1
         try:
             with urllib.request.urlopen(request, timeout=15, context=ssl_context) as response:  # noqa: S310
                 return len(response.read()) >= ERROR_PAGE_MAX_LEN
-        except (urllib.error.URLError, TimeoutError):
+        except urllib.error.URLError, TimeoutError:
             return False
 
     lo, hi = 1, start_guess

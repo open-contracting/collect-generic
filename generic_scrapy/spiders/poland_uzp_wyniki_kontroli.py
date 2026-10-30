@@ -395,7 +395,7 @@ class PolandUzpWynikiKontroli(BaseSpider):
         try:
             with pymupdf.open(stream=body, filetype="pdf") as document:
                 text = "\n".join(page.get_text() for page in document)
-        except (pymupdf.FileDataError, RuntimeError):
+        except pymupdf.FileDataError, RuntimeError:
             self.logger.warning("Not a PDF: %s", uuid)
             text = ""
         text_status = "text"
