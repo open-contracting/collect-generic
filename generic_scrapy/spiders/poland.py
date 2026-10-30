@@ -684,6 +684,7 @@ class Poland(BaseSpider):
             return {"error": "no procedure or buyer in the platformazakupowa.pl URL"}
 
         result = {"urls": [], "documents": [], "deadline": None}
+        files = []
         for procedure_id in ids:
             procedure_url = self.PLATFORMAZAKUPOWA_URL.format(id=procedure_id)
             response = await self.fetch(procedure_url)
@@ -718,15 +719,11 @@ class Poland(BaseSpider):
                     "superseded": False,
                     "state": source,
                 }
-                file_response = await self.fetch(href, cache=True)
-                if file_response.status == HTTPStatus.OK:
-                    filename = UNSAFE_FILENAME_RE.sub("_", f"{Path(urlparse(href).path).stem}__{name}")
-                    path = Path(subdirectory, "attachments", filename)
-                    write_bytes(directory / path, file_response.body)
-                    entry["path"] = str(Path(directory.name, path))
-                else:
-                    entry["error"] = f"HTTP {file_response.status}"
+                filename = UNSAFE_FILENAME_RE.sub("_", f"{Path(urlparse(href).path).stem}__{name}")
+                path = Path(subdirectory, "attachments", filename)
+                files.append((entry, path, scrapy.Request(href, dont_filter=True)))
                 result["documents"].append(entry)
+        await self.download_files(directory, files)
         return result
 
     async def platformazakupowa_search(self, buyer, references):
@@ -772,6 +769,7 @@ class Poland(BaseSpider):
                 return {"error": f"no procedure {' or '.join(references)} on the platform"}
 
         result = {"urls": [], "documents": [], "deadline": None}
+        files = []
         for details_url in details_urls:
             response = await self.fetch(details_url)
             if response.status != HTTPStatus.OK or not MARKETPLANET_DETAILS_RE.search(response.url):
@@ -820,11 +818,6 @@ class Poland(BaseSpider):
                     path = Path(
                         subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{len(tokens):03d}__{title}")
                     )
-                    result["documents"].append(entry)
-                    # Re-runs with the same crawl_time resume, as downloads aren't cached.
-                    if (directory / path).exists():
-                        entry["path"] = str(Path(directory.name, path))
-                        continue
                     # Some files are hundreds of MB.
                     request = scrapy.Request(
                         entry["url"],
@@ -832,12 +825,9 @@ class Poland(BaseSpider):
                         meta={"dont_cache": True, "download_timeout": 1800},
                         dont_filter=True,
                     )
-                    file_response = await self.fetch(request)
-                    if file_response.status == HTTPStatus.OK:
-                        write_bytes(directory / path, file_response.body)
-                        entry["path"] = str(Path(directory.name, path))
-                    else:
-                        entry["error"] = f"HTTP {file_response.status}"
+                    files.append((entry, path, request))
+                    result["documents"].append(entry)
+        await self.download_files(directory, files)
         return result
 
     async def marketplanet_search(self, origin, references):
@@ -869,6 +859,18 @@ class Poland(BaseSpider):
                         if compact(reference) in compact(_text(tr.xpath("td[1]")))
                     )
         return list(dict.fromkeys(urls))
+
+    async def download_files(self, directory, files):
+        """Download each ``(entry, path, request)``, key documents first, and set the entry's path or error."""
+        for entry, path, request in sorted(files, key=lambda file: file[0]["role"] in {"annex", "other"}):
+            # Re-runs with the same crawl_time resume, as Marketplanet downloads aren't cached.
+            if not (directory / path).exists():
+                response = await self.fetch(request)
+                if response.status != HTTPStatus.OK:
+                    entry["error"] = f"HTTP {response.status}"
+                    continue
+                write_bytes(directory / path, response.body)
+            entry["path"] = str(Path(directory.name, path))
 
     # HTTP helpers.
 
