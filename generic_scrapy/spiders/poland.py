@@ -19,6 +19,7 @@ from scrapy.http import JsonRequest
 
 from generic_scrapy.base_spiders.base_spider import BaseSpider
 
+HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
 UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 # Matches an h3 prefix in a BZP announcement like "1.5.1.) Ulica" or
@@ -792,9 +793,9 @@ class Poland(BaseSpider):
                 if response.status != HTTPStatus.OK:
                     entry["error"] = f"HTTP {response.status}"
                     continue
-                # Platforms answer missing files, expired links and blocks with an HTML page.
-                content_type = response.headers.get("Content-Type", b"").decode().lower()
-                if "text/html" in content_type and not path.suffix.lower().startswith(".htm"):
+                # Platforms answer missing files, expired links and blocks with an HTML page. Check the body, not
+                # the Content-Type, which some servers set to text/html for real documents.
+                if HTML_RE.match(response.body[:512]) and not path.suffix.lower().startswith(".htm"):
                     entry["error"] = "HTML page instead of the file"
                     continue
                 write_bytes(directory / path, response.body)
