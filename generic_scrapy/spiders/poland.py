@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-10-30"
+__generated_at__ = "2026-10-31"
 
 import asyncio
 import collections
@@ -21,6 +21,8 @@ from generic_scrapy.base_spiders.base_spider import BaseSpider
 
 HTML_PAGE_ERROR = "HTML page instead of the file"
 HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
+JSON_ERROR_RE = re.compile(rb'\s*\{\s*"success"\s*:\s*false\b')
+EB2B_SLOT = "eb2b.com.pl"
 UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 # Matches an h3 prefix in a BZP announcement like "1.5.1.) Ulica" or
@@ -256,6 +258,8 @@ class Poland(BaseSpider):
         "DOWNLOAD_SLOTS": {
             "api.ted.europa.eu": {"concurrency": 1, "delay": 2},
             "ted.europa.eu": {"concurrency": 1, "delay": 3},
+            # eB2B limits downloads in a short time across its subdomains (see eb2b_request).
+            EB2B_SLOT: {"concurrency": 1, "delay": 5},
         },
         "RETRY_TIMES": 5,
         # Board/Search can take a minute to answer.
@@ -983,7 +987,12 @@ class Poland(BaseSpider):
     @staticmethod
     def eb2b_request(url):
         # The English pages of some procedures are an error page. Downloads redirect to signed S3 URLs that expire.
-        return scrapy.Request(url, headers={"Accept-Language": "pl"}, meta={"dont_cache": True}, dont_filter=True)
+        return scrapy.Request(
+            url,
+            headers={"Accept-Language": "pl"},
+            meta={"dont_cache": True, "download_slot": EB2B_SLOT},
+            dont_filter=True,
+        )
 
     async def eb2b_search(self, origin, references):
         """Return the IDs of the public procedures whose number contains one of ``references``."""
@@ -1028,6 +1037,10 @@ class Poland(BaseSpider):
                 # the Content-Type, which some servers set to text/html for real documents.
                 if HTML_RE.match(response.body[:512]) and not path.suffix.lower().startswith(".htm"):
                     entry["error"] = HTML_PAGE_ERROR
+                    continue
+                # eB2B answers its download limit with a JSON error, with HTTP 200.
+                if JSON_ERROR_RE.match(response.body[:512]) and path.suffix.lower() != ".json":
+                    entry["error"] = f"platform error: {json.loads(response.body).get('msg')}"
                     continue
                 write_bytes(directory / path, response.body)
             entry["path"] = str(Path(directory.name, path))
