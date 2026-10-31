@@ -63,7 +63,7 @@ parsel==1.11.0
     #   scrapy
 protego==0.6.2
     # via scrapy
-pyasn1==0.6.4
+pyasn1==0.6.5
     # via
     #   pyasn1-modules
     #   service-identity
