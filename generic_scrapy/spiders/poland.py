@@ -22,6 +22,9 @@ from generic_scrapy.base_spiders.base_spider import BaseSpider
 HTML_PAGE_ERROR = "HTML page instead of the file"
 HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
 JSON_ERROR_RE = re.compile(rb'\s*\{\s*"success"\s*:\s*false\b')
+EB2B_LIMIT_ERROR = "platform error: download limit"
+# For example: "Przekroczono dozwolony limit pobierania plików w krótkim czasie. [...] (za 19 min. 30 sek.)"
+EB2B_LIMIT_RE = re.compile(r"limit pobierania.*?(\d+) min\. (\d+) sek\.", re.DOTALL)
 EB2B_SLOT = "eb2b.com.pl"
 UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -1029,7 +1032,7 @@ class Poland(BaseSpider):
                     continue
                 # Some files are hundreds of MB, and platforms can send them slowly.
                 request.meta.update({"download_timeout": 1800, "max_retry_times": 1})
-                response = await self.fetch(request)
+                response = await self.fetch_file(request)
                 if response.status != HTTPStatus.OK:
                     entry["error"] = f"HTTP {response.status}"
                     continue
@@ -1038,14 +1041,29 @@ class Poland(BaseSpider):
                 if HTML_RE.match(response.body[:512]) and not path.suffix.lower().startswith(".htm"):
                     entry["error"] = HTML_PAGE_ERROR
                     continue
-                # eB2B answers its download limit with a JSON error, with HTTP 200.
                 if JSON_ERROR_RE.match(response.body[:512]) and path.suffix.lower() != ".json":
-                    entry["error"] = f"platform error: {json.loads(response.body).get('msg')}"
+                    message = json.loads(response.body).get("msg") or ""
+                    entry["error"] = (
+                        EB2B_LIMIT_ERROR if EB2B_LIMIT_RE.search(message) else f"platform error: {message}"
+                    )
                     continue
                 write_bytes(directory / path, response.body)
             entry["path"] = str(Path(directory.name, path))
 
     # HTTP helpers.
+
+    async def fetch_file(self, request):
+        """Download a file, waiting out eB2B's download limit (about 50 files an hour), unless draining."""
+        while True:
+            response = await self.fetch(request.copy())
+            if response.status != HTTPStatus.OK or not JSON_ERROR_RE.match(response.body[:512]):
+                return response
+            match = EB2B_LIMIT_RE.search(json.loads(response.body).get("msg") or "")
+            if not match or self.draining:
+                return response
+            minutes, seconds = map(int, match.groups())
+            self.logger.info("eB2B download limit: waiting %d min for %s", minutes + 1, request.url)
+            await asyncio.sleep(minutes * 60 + seconds + 5)
 
     def board_search_request(self, query, callback):
         return scrapy.Request(
