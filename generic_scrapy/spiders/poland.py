@@ -6,9 +6,11 @@ import asyncio
 import collections
 import csv
 import datetime as dt
+import io
 import json
 import re
 import signal
+import tarfile
 import zoneinfo
 from http import HTTPStatus
 from pathlib import Path
@@ -62,6 +64,7 @@ TED_FIELDS = [
     "internal-identifier-proc",
     "internal-identifier-lot",
     "deadline-receipt-tender-date-lot",
+    "ojs-number",
     *TED_URL_FIELDS,
 ]
 # Board/Search ignores PageSize above 10, so cap the pages read when listing an organization's notices.
@@ -252,6 +255,7 @@ class Poland(BaseSpider):
     PROCEDURE_URL = "https://ezamowienia.gov.pl/mp-client/search/list/{id}"
     TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
     TED_XML_URL = "https://ted.europa.eu/en/notice/{n}/xml"
+    TED_PACKAGE_URL = "https://ted.europa.eu/packages/daily/{year}{issue:05d}"
     TED_NOTICE_URL = "https://ted.europa.eu/en/notice/-/detail/{n}"
 
     custom_settings = {
@@ -549,13 +553,13 @@ class Poland(BaseSpider):
 
         urls = next(([u for u in notice.get(field) or [] if u] for field in TED_URL_FIELDS if notice.get(field)), [])
         if not urls:
-            response = await self.fetch(self.TED_XML_URL.format(n=publication_number))
-            if response.status == HTTPStatus.OK:
-                urls = URL_DOCUMENT_RE.findall(response.text)
-                if match := REFERENCE_NUMBER_RE.search(response.text):
+            xml, error = await self.ted_notice_xml(publication_number, notice)
+            if error:
+                return {**result, "error": f"{publication_number}: {error}"}
+            if xml:
+                urls = URL_DOCUMENT_RE.findall(xml)
+                if match := REFERENCE_NUMBER_RE.search(xml):
                     result["references"] = [match.group(1)]
-            elif response.status == HTTPStatus.ACCEPTED:
-                return {**result, "error": f"{publication_number}: TED notice XML blocked (HTTP 202)"}
         for url in urls:
             if match := TENDER_ID_RE.search(url):
                 return {**result, "tender_id": match.group(0)}
@@ -564,6 +568,29 @@ class Poland(BaseSpider):
             if urls
             else {**result, "error": f"{publication_number}: no documents URL"}
         )
+
+    async def ted_notice_xml(self, publication_number, notice):
+        """Return the notice's XML and an error. If the WAF blocks it, read it from its OJ S issue's daily package."""
+        response = await self.fetch(self.TED_XML_URL.format(n=publication_number))
+        if response.status == HTTPStatus.OK:
+            return response.text, None
+        if response.status != HTTPStatus.ACCEPTED:
+            return None, None
+        issue, _, year = (notice.get("ojs-number") or "").partition("/")
+        if not issue.isdigit():
+            return None, "TED notice XML blocked (HTTP 202), and no OJ S issue"
+        package = await self.fetch(self.TED_PACKAGE_URL.format(year=year, issue=int(issue)), cache=True)
+        if package.status != HTTPStatus.OK:
+            return None, f"TED notice XML blocked (HTTP 202), and daily package unavailable (HTTP {package.status})"
+        number, _, year = publication_number.partition("-")
+        # Packages name files like 00605630_2023.xml, or 568344_2022.xml before 2023.
+        name = f"{int(number)}_{year}.xml"
+        # Read the member in memory: the package is untrusted, so nothing is extracted to disk.
+        with tarfile.open(fileobj=io.BytesIO(package.body), mode="r:gz") as archive:
+            for member in archive:
+                if member.isfile() and Path(member.name).name.lstrip("0") == name:
+                    return archive.extractfile(member).read().decode(), None
+        return None, f"TED notice XML blocked (HTTP 202), and not in daily package {year}/{issue}"
 
     @staticmethod
     def ted_deadline(notice):
