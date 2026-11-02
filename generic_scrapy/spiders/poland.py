@@ -25,8 +25,8 @@ HTML_PAGE_ERROR = "HTML page instead of the file"
 HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
 JSON_ERROR_RE = re.compile(rb'\s*\{\s*"success"\s*:\s*false\b')
 EB2B_LIMIT_ERROR = "platform error: download limit"
-# For example: "Przekroczono dozwolony limit pobierania plików [...] (za 19 min. 30 sek.)" or "(za  5 sek.)"
-EB2B_LIMIT_RE = re.compile(r"limit pobierania.*?(?:(\d+) min\.\s*)?(\d+) sek\.", re.DOTALL)
+# For example: "Przekroczono dozwolony limit pobierania plików [...] (za 19 min. 30 sek.)", "(za  5 sek.)" or "(za  )"
+EB2B_LIMIT_RE = re.compile(r"limit pobierania.*?\(\w+\s*(?:(\d+) min\.)?\s*(?:(\d+) sek\.)?\s*\)", re.DOTALL)
 EB2B_SLOT = "eb2b.com.pl"
 UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -1088,7 +1088,7 @@ class Poland(BaseSpider):
             match = EB2B_LIMIT_RE.search(json.loads(response.body).get("msg") or "")
             if not match or self.draining:
                 return response
-            minutes, seconds = int(match.group(1) or 0), int(match.group(2))
+            minutes, seconds = int(match.group(1) or 0), int(match.group(2) or 0)
             self.logger.info("eB2B download limit: waiting %d min for %s", minutes + 1, request.url)
             await asyncio.sleep(minutes * 60 + seconds + 5)
 
