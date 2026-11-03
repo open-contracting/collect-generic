@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-10-31"
+__generated_at__ = "2026-11-03"
 
 import asyncio
 import collections
@@ -827,6 +827,9 @@ class Poland(BaseSpider):
                 if token in tokens:
                     continue
                 tokens.add(token)
+                # A folder's files are read from its subpage. Skip it after numbering it, to keep the files' paths.
+                if tr.xpath(".//a[contains(@href, 'details?folder=')]"):
+                    continue
                 title = _text(tr.xpath("td[contains(@class, 'text')][1]"))
                 published = MARKETPLANET_DATETIME_RE.match(_text(tr.xpath("td[@class='date-time']")))
                 entry = {
