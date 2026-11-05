@@ -1,11 +1,12 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-03"
+__generated_at__ = "2026-11-05"
 
 import asyncio
 import collections
 import csv
 import datetime as dt
+import html
 import io
 import json
 import re
@@ -65,6 +66,7 @@ TED_FIELDS = [
     "internal-identifier-lot",
     "deadline-receipt-tender-date-lot",
     "ojs-number",
+    "buyer-name",
     *TED_URL_FIELDS,
 ]
 # Board/Search ignores PageSize above 10, so cap the pages read when listing an organization's notices.
@@ -183,6 +185,18 @@ def ted_publication_number(notice):
     return None
 
 
+# Hosts misspelled in notices' documents URLs.
+HOST_TYPOS = {"platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl"}
+
+
+def normalize_url(url):
+    """Unescape HTML entities and correct misspelled hosts in a notice's documents URL."""
+    url = html.unescape(url)
+    for typo, correct in HOST_TYPOS.items():
+        url = url.replace(f"//{typo}", f"//{correct}")
+    return url
+
+
 def host(url):
     return urlparse(url if "://" in url else f"https://{url}").netloc.lower().split(":")[0].removeprefix("www.")
 
@@ -247,6 +261,7 @@ class Poland(BaseSpider):
         "https://ezamowienia.gov.pl/mp-readmodels/api/Search/SearchTenders"
         "?Page={page}&PageSize=100&SortingColumnName=InitiationDate&SortingDirection=DESC"
     )
+    ORGANIZATION_SEARCH_URL = SEARCH_URL.format(page=1) + "&{query}"
     BOARD_SEARCH_URL = "https://ezamowienia.gov.pl/mo-board/api/v1/Board/Search?{query}"
     TENDER_URL = "https://ezamowienia.gov.pl/mp-readmodels/api/Search/GetTender?id={id}"
     DOCUMENTS_URL = "https://ezamowienia.gov.pl/mp-readmodels/api/Search/GetTenderDocuments?tenderId={id}"
@@ -526,7 +541,7 @@ class Poland(BaseSpider):
             item["value"] for item in items if item["label"] == "Numer referencyjny" and item["value"]
         ]
         if match := PLATFORM_URL_RE.search(_norm(" ".join(response.xpath("//text()").getall()))):
-            return {**result, "urls": [match.group(1)]}
+            return {**result, "urls": [normalize_url(match.group(1))]}
         return {**result, "error": f"{notice}: no documents URL in the notice"}
 
     async def resolve_ted(self, publication_number):
@@ -560,14 +575,30 @@ class Poland(BaseSpider):
                 urls = URL_DOCUMENT_RE.findall(xml)
                 if match := REFERENCE_NUMBER_RE.search(xml):
                     result["references"] = [match.group(1)]
+        urls = [normalize_url(url) for url in urls]
         for url in urls:
             if match := TENDER_ID_RE.search(url):
                 return {**result, "tender_id": match.group(0)}
+        if any(host(url) == "ezamowienia.gov.pl" for url in urls) and (
+            tender_id := await self.ezamowienia_tender_id(publication_number, notice)
+        ):
+            return {**result, "tender_id": tender_id}
         return (
             {**result, "urls": list(dict.fromkeys(urls))}
             if urls
             else {**result, "error": f"{publication_number}: no documents URL"}
         )
+
+    async def ezamowienia_tender_id(self, publication_number, notice):
+        """Return the tender ID of an initiated e-Zamówienia tender by its buyer, whose TED notice is this one."""
+        for name in dict.fromkeys(name for names in (notice.get("buyer-name") or {}).values() for name in names):
+            tenders = await self.get_json(
+                self.ORGANIZATION_SEARCH_URL.format(query=urlencode({"OrganizationName": name}))
+            )
+            for tender in tenders if isinstance(tenders, list) else []:
+                if re.search(rf"\b{re.escape(publication_number)}\b", tender.get("tedContractNoticeNumber") or ""):
+                    return tender["objectId"]
+        return None
 
     async def ted_notice_xml(self, publication_number, notice):
         """Return the notice's XML and an error. If the WAF blocks it, read it from its OJ S issue's daily package."""
