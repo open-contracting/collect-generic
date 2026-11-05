@@ -87,6 +87,8 @@ ROLES = [
     ("notice_change", re.compile(r"zmian\w* ogłosz|ogłoszeni\w* o zmianie|sprostowani")),
     ("swz_change", re.compile(r"zmian\w* (?:treści )?(?:swz|idw|specyfikacji|instrukcji dla wykonawc)|modyfikacj")),
     ("qa", re.compile(r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp")),
+    # Appeals, calls to join them, buyers' answers and KIO's rulings. SWZ changes made due to an appeal match above.
+    ("appeal", re.compile(r"odwoła(?:ni|ń)|\bkio\b|wyrok|postępowani\w* odwoławcz|izb\w* odwoławcz|sprzeciw")),
     ("opz", re.compile(r"\bs?opz\b|opis\w* przedmiotu zamówienia|\bpfu\b|program\w* funkcjonalno")),
     ("ppu", re.compile(r"\bppu\b|projektowan\w* postanowie|wz[oó]r umowy|istotne postanowienia")),
     ("notice", re.compile(r"^ogłoszeni|\bojs\d{3}\b")),
@@ -158,9 +160,15 @@ def _parse_announcement_html(html):
 
 
 def role(*names):
-    """Return the document's role (swz, opz, ppu, annex, swz_change, qa, notice, notice_change or other)."""
+    """Return the document's role (swz, opz, ppu, annex, swz_change, qa, appeal, notice, notice_change or other)."""
     text = " ".join(_norm(name).lower().replace("_", " ") for name in names if name)
     return next((name for name, pattern in ROLES if pattern.search(text)), "other")
+
+
+def first_appeal_at(documents):
+    """Return when the first appeal document was published, after which documents can reveal the appeal's grounds."""
+    dates = [date for d in documents if d.get("role") == "appeal" and (date := parse_datetime(d.get("published_at")))]
+    return min(dates).isoformat() if dates else None
 
 
 def replaces(row, previous):
@@ -485,6 +493,7 @@ class Poland(BaseSpider):
             for document in row["documents"]:
                 if published := parse_datetime(document.get("published_at")):
                     document["after_deadline"] = published > final
+        row["first_appeal_at"] = first_appeal_at(row["documents"])
 
         files = [d for d in row["documents"] if d.get("file_name")]
         saved = [d for d in files if d.get("path")]
