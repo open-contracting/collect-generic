@@ -85,7 +85,7 @@ WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 # Checked in order against the document's name and filename.
 ROLES = [
     ("notice_change", re.compile(r"zmian\w* ogłosz|ogłoszeni\w* o zmianie|sprostowani")),
-    ("swz_change", re.compile(r"zmian\w* (?:treści )?(?:swz|idw|specyfikacji|instrukcji dla wykonawc)|modyfikacj")),
+    ("swz_change", re.compile(r"zmian\w* (?:tre[sś]ci )?(?:swz|idw|specyfikacji|instrukcji dla wykonawc)|modyfikacj")),
     ("qa", re.compile(r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp")),
     # Appeals, calls to join them, buyers' answers and KIO's rulings. SWZ changes made due to an appeal match above.
     ("appeal", re.compile(r"odwoła(?:ni|ń)|\bkio\b|wyrok|postępowani\w* odwoławcz|izb\w* odwoławcz|sprzeciw")),
