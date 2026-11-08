@@ -194,14 +194,17 @@ def ted_publication_number(notice):
 
 
 # Hosts misspelled in notices' documents URLs.
-HOST_TYPOS = {"platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl"}
+HOST_TYPOS = {
+    "platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl",
+    "www.platformazakupowa-plk-sa.pl": "platformazakupowa.plk-sa.pl",
+}
 
 
 def normalize_url(url):
     """Unescape HTML entities and correct misspelled hosts in a notice's documents URL."""
     url = html.unescape(url)
     for typo, correct in HOST_TYPOS.items():
-        url = url.replace(f"//{typo}", f"//{correct}")
+        url = re.sub(rf"^(?:https?://)?{re.escape(typo)}", f"https://{correct}", url)
     return url
 
 
