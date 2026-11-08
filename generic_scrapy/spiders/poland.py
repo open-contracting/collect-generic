@@ -42,6 +42,8 @@ TED_OJS_RE = re.compile(r"(\d{4})/S \d{3}-(\d{6})$")
 TED_EFORMS_RE = re.compile(r"\d+-\d{4}$")
 URL_DOCUMENT_RE = re.compile(r"<URL_DOCUMENT>\s*([^<\s]+)")
 REFERENCE_NUMBER_RE = re.compile(r"<REFERENCE_NUMBER>\s*([^<]+?)\s*<")
+# Some buyers append the lot to the procedure's reference in a lot's identifier, e.g. "ZP.371.48.2024.KCCzęść 1".
+LOT_SUFFIX_RE = re.compile(r"\s*(?:część|cz\.)\s*\w+$", re.IGNORECASE)
 # The notice lists' path prefixes, like /pn/lasy/demand/notice/publicpzp/ or /app/demand/notice/public/.
 MARKETPLANET_LIST_RE = re.compile(
     r"(/(?:pn/[^/\"'?#]+|app)/demand/notice/public(?:pzp)?/)(?:current|during|expired)/list"
@@ -575,7 +577,9 @@ class Poland(BaseSpider):
             "references": (
                 [notice["internal-identifier-proc"]]
                 if notice.get("internal-identifier-proc")
-                else list(dict.fromkeys(notice.get("internal-identifier-lot") or []))
+                else list(
+                    dict.fromkeys(LOT_SUFFIX_RE.sub("", ref) for ref in notice.get("internal-identifier-lot") or [])
+                )
             ),
         }
 
