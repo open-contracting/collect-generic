@@ -498,7 +498,8 @@ class Poland(BaseSpider):
                     document["after_deadline"] = published > final
         row["first_appeal_at"] = first_appeal_at(row["documents"])
 
-        files = [d for d in row["documents"] if d.get("file_name")]
+        # A link to another site has no file name, but counts as a file that wasn't downloaded.
+        files = [d for d in row["documents"] if d.get("file_name") or d.get("error")]
         saved = [d for d in files if d.get("path")]
         if tender_ids:
             row["source"] = "ezamowienia"
@@ -749,6 +750,8 @@ class Poland(BaseSpider):
                     entry["path"] = str(path)
                 else:
                     entry["error"] = f"HTTP {response.status}"
+            elif document.get("url"):
+                entry["error"] = "link to another site, not followed"
             entries.append(entry)
 
         notices = await self.tender_notices(tender)
