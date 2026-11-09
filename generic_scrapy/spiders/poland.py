@@ -87,19 +87,25 @@ MAX_MINOR_FILE_SIZE = 100 * 1024 * 1024
 CONCURRENT_CONTROLS = 4
 WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 
+# Some platforms drop or transliterate Polish letters in filenames, so roles are matched without them.
+FOLD = str.maketrans("ąćęłńóśźż", "acelnoszz")
 # Checked in order against the document's name and filename.
 ROLES = [
-    ("notice_change", re.compile(r"zmian\w* ogłosz|ogłoszeni\w* o zmianie|sprostowani")),
-    ("swz_change", re.compile(r"zmian\w* (?:tre[sś]ci )?(?:swz|idw|specyfikacji|instrukcji dla wykonawc)|modyfikacj")),
-    ("qa", re.compile(r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp")),
+    ("notice_change", r"zmian\w* ogłosz|ogłoszeni\w* o zmianie|sprostowani"),
+    ("swz_change", r"zmian\w* (?:tre[sś]ci )?(?:swz|idw|specyfikacji|instrukcji dla wykonawc)|modyfikacj"),
+    ("qa", r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp"),
     # Appeals, calls to join them, buyers' answers and KIO's rulings. SWZ changes made due to an appeal match above.
-    ("appeal", re.compile(r"odwoła(?:ni|ń)|\bkio\b|wyrok|postępowani\w* odwoławcz|izb\w* odwoławcz|sprzeciw")),
-    ("opz", re.compile(r"\bs?opz\b|opis\w* przedmiotu zamówienia|\bpfu\b|program\w* funkcjonalno")),
-    ("ppu", re.compile(r"\bppu\b|projektowan\w* postanowie|wz[oó]r umowy|istotne postanowienia")),
-    ("notice", re.compile(r"^ogłoszeni|\bojs\d{3}\b")),
-    ("annex", re.compile(r"załącznik|\bza[lł]\.?\s*(?:nr|\d)|\bzal\b")),
+    # "odwoanie" is "odwołanie" with the ł dropped.
+    (
+        "appeal",
+        r"odwo[lł]?a(?:ni|ń)|o złożeniu odw|\bkio\b|wyrok|postępowani\w* odwoławcz|izb\w* odwoławcz|sprzeciw",
+    ),
+    ("opz", r"\bs?opz\b|opis\w* przedmiotu zamówienia|\bpfu\b|program\w* funkcjonalno"),
+    ("ppu", r"\bppu\b|projektowan\w* postanowie|wz[oó]r umowy|istotne postanowienia"),
+    ("notice", r"^ogłoszeni|\bojs\d{3}\b"),
+    ("annex", r"załącznik|\bza[lł]\.?\s*(?:nr|\d)|\bzal\b"),
     # Some buyers (e.g. PKP PLK) call the SWZ the "Instrukcja dla Wykonawców" (IDW).
-    ("swz", re.compile(r"\bswz\b|specyfikacj\w* warunków zamówienia|\bidw\b|instrukcj\w* dla wykonawc")),
+    ("swz", r"\bswz\b|specyfikacj\w* warunków zamówienia|\bidw\b|instrukcj\w* dla wykonawc"),
 ]
 PRIORITY_GROUPS = [
     ("cn_test", lambda row: row.get("cn_split") == "test"),
@@ -108,6 +114,7 @@ PRIORITY_GROUPS = [
     ("art124_train", lambda row: row.get("art124_split") == "train"),
     ("cn_aux", lambda row: row.get("cn_split") == "aux"),
 ]
+ROLES = [(name, re.compile(pattern.translate(FOLD))) for name, pattern in ROLES]
 GROUP_ORDER = {name: i for i, (name, _) in enumerate(PRIORITY_GROUPS)}
 STATUSES = ["not_found", "partial", "complete"]
 
@@ -166,7 +173,7 @@ def _parse_announcement_html(html):
 
 def role(*names):
     """Return the document's role (swz, opz, ppu, annex, swz_change, qa, appeal, notice, notice_change or other)."""
-    text = " ".join(_norm(name).lower().replace("_", " ") for name in names if name)
+    text = " ".join(_norm(name).lower().replace("_", " ") for name in names if name).translate(FOLD)
     return next((name for name, pattern in ROLES if pattern.search(text)), "other")
 
 
