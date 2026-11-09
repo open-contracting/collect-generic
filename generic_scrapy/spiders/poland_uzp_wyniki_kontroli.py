@@ -291,10 +291,9 @@ def amount(text):
     return f"{float(re.sub(r'[ .]', '', text).replace(',', '.')):.2f}"
 
 
-def value_figures(header):
-    """Return the amounts after "Wartość zamówienia" in a header, with their ``label``, ``pln`` and ``eur``."""
-    match = VALUE_LABEL_RE.search(header)
-    text = LETTERHEAD_RE.sub("", header[match.start() if match else 0 :])
+def value_figures(text):
+    """Return the amounts in a header's text, with their ``label``, ``pln`` and ``eur``."""
+    text = LETTERHEAD_RE.sub("", text)
     # An amount without decimals needs a currency, so as not to be a year or a number.
     amounts = [match for match in AMOUNT_RE.finditer(text) if match[3] or match[4]]
     figures = []
@@ -349,7 +348,9 @@ def value_figures(header):
 
 def value_fields(header):
     """Return the controlled procedure's value, and the whole contract's or project's value if the header gives it."""
-    figures = value_figures(header)
+    match = VALUE_LABEL_RE.search(header)
+    # In a header laid out in columns, the figures can precede "Wartość zamówienia".
+    figures = (match and value_figures(header[match.start() :])) or value_figures(header)
     if not figures:
         return VALUE_FIELDS
     value = next((f for f in figures if CONTROLLED_VALUE_RE.search(f["label"])), figures[0])
