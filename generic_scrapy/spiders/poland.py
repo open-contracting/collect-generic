@@ -101,11 +101,13 @@ ROLES = [
         r"odwo[lł]?a(?:ni|ń)|o złożeniu odw|\bkio\b|wyrok|postępowani\w* odwoławcz|izb\w* odwoławcz|sprzeciw",
     ),
     ("opz", r"\bs?opz\b|opis\w* przedmiotu zamówienia|\bpfu\b|program\w* funkcjonalno"),
-    ("ppu", r"\bppu\b|projektowan\w* postanowie|wz[oó]r umowy|istotne postanowienia"),
+    ("ppu", r"\bppu\b|projektowan\w* postanowie|wz[oó]r umowy|istotne postanowienia|warunki (?:kontraktu|umowy)"),
     ("notice", r"^ogłoszeni|\bojs\d{3}\b"),
+    # The SWZ packaged with its annexes, like "Tom I - IDW z załącznikami" or "SWZ + załączniki.zip".
+    ("swz", r"(?:\bswz\b|\bidw\b|\btom i\b|instrukcj\w* dla wykonawc\w*)\W*(?:wraz z|z|\+)\s*załącznik"),
     ("annex", r"załącznik|\bza[lł]\.?\s*(?:nr|\d)|\bzal\b"),
-    # Some buyers (e.g. PKP PLK) call the SWZ the "Instrukcja dla Wykonawców" (IDW).
-    ("swz", r"\bswz\b|specyfikacj\w* warunków zamówienia|\bidw\b|instrukcj\w* dla wykonawc"),
+    # Some buyers (e.g. PKP PLK) call the SWZ the "Instrukcja dla Wykonawców" (IDW), or volume I ("Tom I").
+    ("swz", r"\bswz\b|specyfikacj\w* warunków zamówienia|\bidw\b|instrukcj\w* dla wykonawc|\btom i\b"),
 ]
 PRIORITY_GROUPS = [
     ("cn_test", lambda row: row.get("cn_split") == "test"),
