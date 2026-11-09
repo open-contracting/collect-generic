@@ -91,9 +91,9 @@ For each file, saves the PDF and its text under `data/poland_uzp_wyniki_kontroli
 - `kind` (`ex-ante` or `ad-hoc`, from the parent page), `year`, `title`, `filename`, `url`, `size` and `path`.
 - `file_kind`: `result`, `objections_ruling`, `correction`, `recommendations_confirmation`, `annex`, `kio_resolution`, `not_controlled` or `other`, from the title and filename, then the opening of the text.
 - `text_status`: `text`, `ocr` or `empty`.
-- The header fields `authority`, `contract_type`, `subject`, `procedure_type`, `procedure_start`, `notice` (as written), `notice_ids` (normalised), `value` and `result_date`, then `outcome` (`breach` or `no_breach`), `breach_statement`, `breached_articles` (like `art. 99 ust. 4`) and `law` (`2004` or `2019`).
+- The header fields `authority`, `contract_type`, `subject`, `procedure_type`, `procedure_start`, `notice` (as written), `notice_ids` (normalised), `value` (as written) and `result_date`; the value's figures, `value_figures` (each amount after *Wartość zamówienia* in the header, in PLN and EUR, with its label); `value_pln` and `value_eur`, the controlled procedure's value (the figure labelled as controlled, like *kontrolowane zamówienie*, or else the first); and `whole_value_pln`, `whole_value_eur` and `whole_value_label`, the first figure labelled as the whole contract or project, like *całkowita wartość zamówienia*, *część zamówienia o wartości* or *wartość całego projektu* (it can be the controlled procedure's value, and a project's value isn't necessarily a contract's); then `outcome` (`breach` or `no_breach`), `breach_statement`, `breached_articles` (like `art. 99 ust. 4`) and `law` (`2004` or `2019`).
 
-At the end of the crawl, writes one row per control to `controls.json` and `controls.csv`, with the columns of `oecd-poland/analysis/uzp_manifest.csv`, plus `file_kinds`, `law`, `breached_articles` and `breach_statement`. In the CSV, multiple values are joined with `; `. Header fields come from the control's result files first. `outcome` is `not_controlled` if a file says so, `breach` if any result (one per part, for a control split into parts) finds a breach, and otherwise the first outcome found.
+At the end of the crawl, writes one row per control to `controls.json` and `controls.csv`, with the columns of `oecd-poland/analysis/uzp_manifest.csv`, plus `value_pln`, `value_eur`, `whole_value_pln`, `whole_value_eur`, `whole_value_label`, `value_figures`, `file_kinds`, `law`, `breached_articles` and `breach_statement`. In the CSV, multiple values are joined with `; `. Header fields come from the control's result files first. `outcome` is `not_controlled` if a file says so, `breach` if any result (one per part, for a control split into parts) finds a breach, and otherwise the first outcome found.
 
 Notice numbers are normalised as `YYYY/BZP NNNNNNNN/VV`, `YYYY/S NNN-NNNNNN`, `NNNNNN-N-YYYY` (pre-2021 BZP) and `N-YYYY` (TED eForms, no leading zeros).
 
@@ -111,6 +111,7 @@ Caveats:
 - For some ad-hoc controls, only the objections ruling is published, so the header fields are empty.
 - `outcome` is that of the result, not of any later objections ruling. If the objections are upheld (*uwzględnienie zastrzeżeń*), read the ruling.
 - The parsing is regular expressions over flattened text. OCR errors and unusual layouts can leave fields empty or wrong. A few breaches have no `breached_articles`, because the statement opens unusually (*dopuścił się naruszenia*) or its list is missing from the text layer.
+- Value labels are read from the text around each figure, so check `value_figures` before relying on `whole_value_*`. Where the header is laid out in columns, the labels are separated from their figures, and the labels in `value_figures` can be empty or wrong.
 
 #### `poland_cpv`
 

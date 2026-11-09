@@ -57,7 +57,7 @@ FIELDS = {
     "procedure_type": r"Tryb (?:postępowania|udzielenia zamówienia):\s*(.+?)\s+(?:Data|Dat |Numer|Wartość)",
     "procedure_start": r"Dat\w* wszczęcia\s*postępowania:\s*(\d{1,2}[.\s]\d{1,2}[.\s]\d{4})",
     "notice": r"Numer\w* ogłosze\w*(?: o zamówieniu)?:\s*(.+?)\s+(?:Wartość|Środki|telefon|Szacunkowa)",
-    "value": r"Wartość zamówienia:\s*([\d\s.,]+ ?zł)",
+    "value": r"Wartość zamówienia:\s*([\d\s.,]+ ?(?:zł|PLN))",
     "result_date": r"Warszawa,\s*(?:dnia\s*)?(\d{1,2}[.\s]\w+[.\s]\d{4})",
 }
 FIELDS = {key: re.compile(pattern) for key, pattern in FIELDS.items()}
@@ -67,6 +67,24 @@ FIELDS = {key: re.compile(pattern) for key, pattern in FIELDS.items()}
 SECTION_2_RE = re.compile(r"(?:\d\.\s*)?Informacja o stwierdz(?:eniu|onych) narusze")
 # The end of the header, in which notice numbers are searched. Older layouts lack it.
 HEADER_END_RE = re.compile(r"2\.\s*Informacja o stwierdzeniu")
+# An amount, like "1.622.017.349,55 zł" or "47 644 844, 47 euro". Notice numbers can precede it.
+AMOUNT_RE = re.compile(r"(?<![\d.,])(\d{1,5}(?:([ .])\d{3}(?:\2\d{3})*)?(,\s?\d{2})?)(?![\d,])\s*(zł|PLN|euro|EUR)?")
+# The most characters between an amount in złoty and its equivalent in euro, like " (tj. ".
+MAX_EURO_GAP = 60
+VALUE_LABEL_RE = re.compile(r"Warto\w* zamówienia")
+# Separates the labels of consecutive figures, like "…) - całkowita wartość zamówienia, w tym: - część 1: …".
+DASHES = {"-", "\u2013", "\u2212"}
+LABEL_SEPARATOR_RE = re.compile(r";|:|\s[-\u2013\u2212➢]\s|\bw tym\b|Środki UE|Rodzaj procedury")
+# UZP's letterhead, which can fall within the header.
+LETTERHEAD_RE = re.compile(
+    r"telefon: [\d ]+|Adres e-mail: \S+|Strona www: \S+|Urząd Zamówień Publicznych,?|ul\. Postępu 17A,?"
+    r"|(?:02-676 Warszawa|www\.uzp\.gov\.pl),?(?: \d(?= \D))?"
+)
+# Labels of the value of the whole contract or project, of which the controlled procedure can be a part.
+WHOLE_VALUE_RE = re.compile(r"całk|całe|całość|łączn\w* wartoś|zamówienia o (?:łącznej )?wartości", re.IGNORECASE)
+CONTROLLED_VALUE_RE = re.compile(
+    r"kontrolowan|objęt\w* kontrol|przedmio\w* kontrol|przedmiotow\w* zamówieni|aktualnie udzielan", re.IGNORECASE
+)
 # "barak" is a typo in KU/96/25.
 NO_BREACH_RE = re.compile(r"ba?rak\w* (?:stwierdzonych )?narusze|nie stwierdz\w* narusze", re.IGNORECASE)
 BREACH_RE = re.compile(r"narusz", re.IGNORECASE)
@@ -135,6 +153,12 @@ CONTROL_COLUMNS = [
     "notice",
     "notice_ids",
     "value",
+    "value_pln",
+    "value_eur",
+    "whole_value_pln",
+    "whole_value_eur",
+    "whole_value_label",
+    "value_figures",
     "result_date",
     "files",
     "urls",
@@ -143,6 +167,14 @@ CONTROL_COLUMNS = [
     "breached_articles",
     "breach_statement",
 ]
+VALUE_FIELDS = {
+    "value_pln": None,
+    "value_eur": None,
+    "whole_value_pln": None,
+    "whole_value_eur": None,
+    "whole_value_label": None,
+    "value_figures": [],
+}
 EMPTY_FIELDS = {
     **dict.fromkeys(FIELDS),
     "notice_ids": [],
@@ -150,6 +182,7 @@ EMPTY_FIELDS = {
     "breach_statement": None,
     "breached_articles": [],
     "law": None,
+    **VALUE_FIELDS,
 }
 
 
@@ -254,6 +287,87 @@ def breached_articles(statement):
     return list(dict.fromkeys(articles))
 
 
+def amount(text):
+    return f"{float(re.sub(r'[ .]', '', text).replace(',', '.')):.2f}"
+
+
+def value_figures(header):
+    """Return the amounts after "Wartość zamówienia" in a header, with their ``label``, ``pln`` and ``eur``."""
+    match = VALUE_LABEL_RE.search(header)
+    text = LETTERHEAD_RE.sub("", header[match.start() if match else 0 :])
+    # An amount without decimals needs a currency, so as not to be a year or a number.
+    amounts = [match for match in AMOUNT_RE.finditer(text) if match[3] or match[4]]
+    figures = []
+    i = 0
+    while i < len(amounts):
+        current = amounts[i]
+        following = amounts[i + 1] if i + 1 < len(amounts) else None
+        if current[4] in {"euro", "EUR"}:
+            figure = {"start": current.start(), "end": current.end(), "pln": None, "eur": amount(current[1])}
+        elif following and following[4] in {"euro", "EUR"} and following.start() - current.end() <= MAX_EURO_GAP:
+            figure = {"start": current.start(), "end": following.end(), "pln": amount(current[1])}
+            figure["eur"] = amount(following[1])
+            i += 1
+        elif current[4]:
+            figure = {"start": current.start(), "end": current.end(), "pln": amount(current[1]), "eur": None}
+        else:
+            # A percentage or other number, without a currency.
+            i += 1
+            continue
+        figures.append(figure)
+        i += 1
+
+    # The text between two figures can open with the first's label after a dash, like "… euro) - łączna wartość
+    # projektu;", and end with the second's, like "w tym: - część 1:". A label that ends with ":" or with a dash just
+    # before the second figure, like "- prawo opcji - 20 635 890 zł", is the second's.
+    ends = [0] + [figure["end"] for figure in figures]
+    starts = [figure["start"] for figure in figures] + [len(text)]
+    gaps = [text[a:b].lstrip(" ),.") for a, b in zip(ends, starts, strict=True)]
+    segments = [[part for part in LABEL_SEPARATOR_RE.split(gap) if part.strip(" ,.()")] for gap in gaps]
+    trailing = [False]
+    for j, gap in enumerate(gaps[1:], 1):
+        separator = LABEL_SEPARATOR_RE.search(gap, 1)
+        trailing.append(
+            gap[:1] in DASHES
+            and bool(segments[j])
+            and (
+                separator[0] != ":" and (separator[0].strip() not in DASHES or bool(gap[separator.end() :].strip()))
+                if separator
+                else j == len(figures)
+            )
+        )
+    for j, figure in enumerate(figures):
+        if trailing[j + 1]:
+            label = segments[j + 1][0]
+        elif len(segments[j]) > trailing[j]:
+            label = segments[j][-1]
+        else:
+            label = ""
+        figure["label"] = " ".join(label.strip(" ,.()-\u2013\u2212").split())[-150:]
+    return [{key: figure[key] for key in ("label", "pln", "eur")} for figure in figures]
+
+
+def value_fields(header):
+    """Return the controlled procedure's value, and the whole contract's or project's value if the header gives it."""
+    figures = value_figures(header)
+    if not figures:
+        return VALUE_FIELDS
+    value = next((f for f in figures if CONTROLLED_VALUE_RE.search(f["label"])), figures[0])
+    whole = next(
+        (f for f in figures if WHOLE_VALUE_RE.search(f["label"]) and not CONTROLLED_VALUE_RE.search(f["label"])), None
+    )
+    return {
+        "value_pln": value["pln"],
+        "value_eur": value["eur"],
+        "whole_value_pln": whole and whole["pln"],
+        "whole_value_eur": whole and whole["eur"],
+        "whole_value_label": whole and whole["label"],
+        "value_figures": [
+            f"{f['label']}: " + " / ".join(f"{v} {c}" for c in ("pln", "eur") if (v := f[c])) for f in figures
+        ],
+    }
+
+
 def parse_text(flat):
     """Return the fields parsed from a control result's text. Missing fields are ``None``."""
     head = flat[:8000]
@@ -265,6 +379,7 @@ def parse_text(flat):
     match = HEADER_END_RE.search(flat)
     header = flat[: match.start()] if match else flat[:4000]
     fields["notice_ids"] = sorted(parse_notices(" ; ".join(NOTICE_RE.findall(header))))
+    fields.update(value_fields(header))
     fields["outcome"] = outcome(flat)
     fields["breach_statement"] = statement = breach_statement(flat) if fields["outcome"] != "no_breach" else None
     fields["breached_articles"] = breached_articles(statement) if statement else []
@@ -447,7 +562,7 @@ def rollup(rows):
             "kind": files[0]["kind"],
             "year": files[0]["year"],
         }
-        for key in [*FIELDS, "law"]:
+        for key in [*FIELDS, *VALUE_FIELDS, "law"]:
             control[key] = next((row[key] for row in ordered if row[key]), None)
 
         kinds = {row["file_kind"] for row in files}
