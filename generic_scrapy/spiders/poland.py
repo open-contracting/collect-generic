@@ -69,10 +69,13 @@ TED_FIELDS = [
     "deadline-receipt-tender-date-lot",
     "ojs-number",
     "buyer-name",
+    "title-proc",
     *TED_URL_FIELDS,
 ]
 # Board/Search ignores PageSize above 10, so cap the pages read when listing an organization's notices.
 MAX_NOTICE_PAGES = 30
+# The most days before its TED notice that an e-Zamówienia tender is searched for.
+TENDER_INITIATION_DAYS = 90
 MARKETPLANET_STATUSES = ("current", "during", "expired")
 # Marketplanet hosts its own platform (ezamawiajacy.pl) and buyers' white-label platforms.
 MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl")
@@ -225,6 +228,10 @@ def parse_size(text):
 
 def compact(text):
     return re.sub(r"\s+", "", text or "").lower().replace("\u2013", "-").replace("\u2014", "-")
+
+
+def alphanumeric(text):
+    return re.sub(r"\W+", "", text or "").lower()
 
 
 def parse_datetime(value):
@@ -607,14 +614,33 @@ class Poland(BaseSpider):
         )
 
     async def ezamowienia_tender_id(self, publication_number, notice):
-        """Return the tender ID of an initiated e-Zamówienia tender by its buyer, whose TED notice is this one."""
+        """Return the ID of the e-Zamówienia tender by the notice's buyer that the TED notice announces."""
+        number, _, year = publication_number.partition("-")
+        # Buyers enter the TED number in any format, e.g. "2023/S 163-514701" or "2026-OJS207-00738097-pl-ts".
+        number_re = re.compile(rf"(?<!\d)0*{int(number)}(?!\d)")
+        titles = {compact(title) for title in (notice.get("title-proc") or {}).values()}
+        query = {}
+        if published := parse_datetime(notice.get("publication-date")):
+            # Without a date range, the search returns only recent tenders.
+            query["InitiationDateFrom"] = (published - dt.timedelta(days=TENDER_INITIATION_DAYS)).date().isoformat()
+            query["InitiationDateTo"] = (published + dt.timedelta(days=1)).date().isoformat()
         for name in dict.fromkeys(name for names in (notice.get("buyer-name") or {}).values() for name in names):
             tenders = await self.get_json(
-                self.ORGANIZATION_SEARCH_URL.format(query=urlencode({"OrganizationName": name}))
+                self.ORGANIZATION_SEARCH_URL.format(query=urlencode({"OrganizationName": name, **query}))
             )
-            for tender in tenders if isinstance(tenders, list) else []:
-                if re.search(rf"\b{re.escape(publication_number)}\b", tender.get("tedContractNoticeNumber") or ""):
+            tenders = tenders if isinstance(tenders, list) else []
+            for tender in tenders:
+                ted = tender.get("tedContractNoticeNumber") or ""
+                if (number_re.search(ted) and year in ted) or compact(tender.get("title")) in titles:
                     return tender["objectId"]
+            # Old TED notices have no procedure title. Accept the buyer's only tender without a TED number that week.
+            if published and not titles:
+                week = (published - dt.timedelta(days=7)).date().isoformat()
+                candidates = [
+                    t for t in tenders if not t.get("tedContractNoticeNumber") and t.get("initiationDate", "") >= week
+                ]
+                if len(candidates) == 1:
+                    return candidates[0]["objectId"]
         return None
 
     async def ted_notice_xml(self, publication_number, notice):
@@ -1013,6 +1039,9 @@ class Poland(BaseSpider):
                 return {"error": "no reference number to find the procedure on the platform"}
             ids = await self.eb2b_search(origin, references)
             if not ids:
+                # Archived procedures aren't public, but their result publications are.
+                if await self.eb2b_search(origin, references, "result-publication", "auction_id"):
+                    return {"error": "procedure archived on the platform, so not public"}
                 return {"error": f"no procedure {' or '.join(references)} on the platform"}
 
         result = {"urls": [], "documents": [], "deadline": None}
@@ -1077,25 +1106,30 @@ class Poland(BaseSpider):
             dont_filter=True,
         )
 
-    async def eb2b_search(self, origin, references):
-        """Return the IDs of the public procedures whose number contains one of ``references``."""
+    async def eb2b_search(self, origin, references, controller="auction", id_field="id"):
+        """Return the IDs of the procedures whose number contains one of ``references``, ignoring punctuation."""
         ids = []
         for reference in references:
             # The filter matches substrings. If the full reference misses (e.g. on dashes, or if the notice's
-            # reference includes the title), try its parts that look like reference numbers (e.g. DZZK/7/BM/2024).
+            # reference includes the title), try its parts that look like reference numbers (e.g. DZZK/7/BM/2024),
+            # then its dotted numbers (e.g. 3.2410.6.2023 in "O.Sz.D-3.2410.6.2023" for "O/Sz.D-3.2410.6.2023").
             parts = [part for part in reference.split() if re.fullmatch(r"(?=.*\d)(?=.*[./-])\S{6,}", part)]
-            for value in dict.fromkeys([reference, *parts]):
+            numbers = re.findall(r"\d+(?:\.\d+){2,}", reference)
+            for value in dict.fromkeys([reference, *parts, *numbers]):
                 query = urlencode(
                     {"filter": json.dumps([{"property": "auction_number", "value": value}]), "start": 0, "limit": 100}
                 )
-                response = await self.fetch(self.eb2b_request(f"{origin}/auction/auction/list?{query}"))
+                response = await self.fetch(self.eb2b_request(f"{origin}/auction/{controller}/list?{query}"))
                 if response.status != HTTPStatus.OK:
                     self.logger.warning("eB2B search failed (HTTP %s): %s", response.status, origin)
                     break
                 matches = [
-                    str(auction["id"])
+                    str(auction[id_field])
                     for auction in json.loads(response.body).get("data") or []
-                    if compact(value) in compact(auction.get("auction_number"))
+                    if any(
+                        alphanumeric(part) in alphanumeric(auction.get("auction_number"))
+                        for part in [reference, *parts]
+                    )
                 ]
                 if matches:
                     ids.extend(matches)
