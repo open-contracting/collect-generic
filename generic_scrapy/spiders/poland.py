@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-05"
+__generated_at__ = "2026-11-10"
 
 import asyncio
 import collections
@@ -306,6 +306,7 @@ class Poland(BaseSpider):
     TED_XML_URL = "https://ted.europa.eu/en/notice/{n}/xml"
     TED_PACKAGE_URL = "https://ted.europa.eu/packages/daily/{year}{issue:05d}"
     TED_NOTICE_URL = "https://ted.europa.eu/en/notice/-/detail/{n}"
+    TED_PDF_URL = "https://ted.europa.eu/pl/notice/{n}/pdf"
 
     custom_settings = {
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
@@ -510,7 +511,10 @@ class Poland(BaseSpider):
             row["documents"].extend(platform.get("documents", []))
             if platform.get("deadline"):
                 row["bid_deadline_final"] = platform["deadline"].isoformat()
-        row["documents"].extend(self.ted_documents(ted_notices.values()))
+        notices = self.ted_documents(ted_notices.values())
+        if not tender_ids:
+            notices.extend(self.bzp_documents(resolutions, directory))
+        row["documents"].extend(notices)
         if not row["bid_deadline_final"] and len(deadlines) > 1:
             row["bid_deadline_final"] = deadlines[-1].isoformat()
         row["bid_deadline_final"] = row["bid_deadline_final"] or row["bid_deadline_original"]
@@ -520,9 +524,11 @@ class Poland(BaseSpider):
                 if published := parse_datetime(document.get("published_at")):
                     document["after_deadline"] = published > final
         row["first_appeal_at"] = first_appeal_at(row["documents"])
+        await self.save_ted_notices(notices, directory)
 
-        # A link to another site has no file name, but counts as a file that wasn't downloaded.
-        files = [d for d in row["documents"] if d.get("file_name") or d.get("error")]
+        # A link to another site has no file name, but counts as a file that wasn't downloaded. Notices alone don't
+        # make a procedure's documents found.
+        files = [d for d in row["documents"] if (d.get("file_name") or d.get("error")) and d not in notices]
         saved = [d for d in files if d.get("path")]
         if tender_ids:
             row["source"] = "ezamowienia"
@@ -572,6 +578,7 @@ class Poland(BaseSpider):
         response = await self.fetch(self.NOTICE_HTML_URL.format(n=quote(hit["noticeNumber"], safe="")))
         if response.status != HTTPStatus.OK:
             return {**result, "error": f"{notice}: notice body unavailable (HTTP {response.status})"}
+        result["bzp_notice"] = {"hit": hit, "body": response.body}
         items = (item for section in _parse_announcement_html(response.text)["sections"] for item in section["items"])
         result["references"] = [
             item["value"] for item in items if item["label"] == "Numer referencyjny" and item["value"]
@@ -686,6 +693,29 @@ class Poland(BaseSpider):
             filter(None, map(parse_datetime, notice.get("deadline-receipt-tender-date-lot") or [])), default=None
         )
 
+    @staticmethod
+    def bzp_documents(resolutions, directory):
+        """Save the BZP notices of a procedure run on another platform, and return their documents."""
+        documents = []
+        for resolution in resolutions:
+            if not (notice := resolution.get("bzp_notice")):
+                continue
+            number = notice["hit"]["noticeNumber"]
+            path = Path("notices", UNSAFE_FILENAME_RE.sub("_", number) + ".html")
+            write_bytes(directory / path, notice["body"])
+            documents.append(
+                {
+                    "path": str(Path(directory.name, path)),
+                    "url": None,
+                    "title": f"{notice['hit'].get('noticeType')} {number}",
+                    "file_name": path.name,
+                    "published_at": notice["hit"].get("publicationDate"),
+                    "role": "notice" if notice["hit"].get("noticeType") == "ContractNotice" else "notice_change",
+                    "superseded": False,
+                }
+            )
+        return documents
+
     def ted_documents(self, notices):
         documents = []
         contract_notices = 0
@@ -706,6 +736,23 @@ class Poland(BaseSpider):
                 }
             )
         return documents
+
+    async def save_ted_notices(self, documents, directory):
+        """Save the Polish PDF of each TED notice published before the bid deadline."""
+        for document in documents:
+            if document["path"] or document.get("after_deadline"):
+                continue
+            number = document["url"].rsplit("/", 1)[1]
+            document["file_name"] = f"{number}.pdf"
+            response = await self.fetch(self.TED_PDF_URL.format(n=number), cache=True)
+            if response.status != HTTPStatus.OK:
+                document["error"] = f"HTTP {response.status}"
+            elif not response.body.startswith(b"%PDF"):
+                document["error"] = HTML_PAGE_ERROR
+            else:
+                path = Path("ted", document["file_name"])
+                write_bytes(directory / path, response.body)
+                document["path"] = str(Path(directory.name, path))
 
     @staticmethod
     def submission_terms(tender):

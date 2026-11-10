@@ -38,6 +38,8 @@ With `-a platforms=eb2b`, a documents URL on `*.eb2b.com.pl` is either the proce
 
 On every platform, the spider downloads key documents first, and skips annexes and other files over 100 MB.
 
+The spider also saves the procedure's notices published before the bid deadline: each TED notice's Polish PDF, under `<control_id>/ted/<publication number>.pdf`, and, for a procedure run on another platform, its BZP notice's `Board/GetNoticeHtmlBody`, under `<control_id>/notices/`. Notices don't count towards a control's `status`.
+
 The crawl writes, in the output directory:
 
 - `manifest.json`: one JSON line per control, with `control_id`, `group`, `kind`, `notice_ids`, `source` (`ezamowienia`, `platform:<host>` or `unresolved`), `procedure_url`, `tender_ids`, `bid_deadline_original`, `bid_deadline_final`, `status` (`complete`, `partial` or `not_found`), `reason` and `documents`. Each row also has `first_appeal_at` (when the first `appeal` document was published: later documents can reveal the appeal's grounds, so model input should use only earlier ones), `collection` (`crawl`, or `manual` for documents collected by hand) and, if crawled, `crawl` (the crawl directory's name). Each document has `path` (relative to the output directory, or null if there's no file), `url`, `title`, `published_at`, `role` (`swz`, `opz`, `ppu`, `annex`, `swz_change`, `qa`, `appeal`, `notice`, `notice_change` or `other`, from its name; `appeal` covers appeals, calls to join them, the buyer's answers and KIO's rulings), `superseded` (deleted by the buyer), `state`, `after_deadline`, `size` (bytes, from a platform's files table) and `error` (why there's no file; an e-Zamówienia document that links to another site isn't followed, and counts as a missing file).
