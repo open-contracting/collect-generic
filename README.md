@@ -24,7 +24,7 @@ Both write under `data/poland/<crawl_directory>/<tenderId>/`, and skip tenders w
 In the `notice_numbers` mode, each notice is resolved:
 
 - BZP notices via `Board/Search?NoticeNumber=…`. If the procedure isn't run on e-Zamówienia (`isProceedingOnPlatform: false`), the documents URL is read from the notice's *Adres strony internetowej prowadzonego postępowania*.
-- TED notices via the TED Search API: the documents URL (BT-15, or else the restricted-documents or submission URL), and the procedure's other notices (by `procedure-identifier`, for eForms). Pre-eForms notices have the documents URL only in the notice XML (`URL_DOCUMENT`).
+- TED notices via the TED Search API: the documents URL (BT-15, or else the restricted-documents or submission URL), and the procedure's other notices (by `procedure-identifier`, for eForms, keeping those with the same reference number or title, as some buyers reuse a procedure identifier). The bid deadline is the notice's, moved by each later notice published before the deadline. The reference number is the latest contract notice's, as later notices can correct it. Pre-eForms notices have the documents URL only in the notice XML (`URL_DOCUMENT`), and the reference number in the title (*numer postępowania*) or else `REFERENCE_NUMBER`.
 
 A documents URL on `ezamowienia.gov.pl` gives the tender ID. The files go under `data/poland_tender_documents/<control_id>/<tenderId>/` (set `-a output=…` to use another directory under `data/`, like `poland_kio_tender_documents`).
 

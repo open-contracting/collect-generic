@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-10"
+__generated_at__ = "2026-11-14"
 
 import asyncio
 import collections
@@ -42,6 +42,8 @@ TED_OJS_RE = re.compile(r"(\d{4})/S \d{3}-(\d{6})$")
 TED_EFORMS_RE = re.compile(r"\d+-\d{4}$")
 URL_DOCUMENT_RE = re.compile(r"<URL_DOCUMENT>\s*([^<\s]+)")
 REFERENCE_NUMBER_RE = re.compile(r"<REFERENCE_NUMBER>\s*([^<]+?)\s*<")
+# Some buyers copy another procedure's REFERENCE_NUMBER, but give the right one in the title.
+TITLE_REFERENCE_RE = re.compile(r"<TITLE>\s*<P>[^<]*?\bnumer postępowania:?\s*([^\s<,;]+)", re.IGNORECASE)
 # Some buyers append the lot to the procedure's reference in a lot's identifier, e.g. "ZP.371.48.2024.KCCzęść 1".
 LOT_SUFFIX_RE = re.compile(r"\s*(?:część|cz\.)\s*\w+$", re.IGNORECASE)
 # The notice lists' path prefixes, like /pn/lasy/demand/notice/publicpzp/ or /app/demand/notice/public/.
@@ -67,6 +69,7 @@ TED_FIELDS = [
     "internal-identifier-proc",
     "internal-identifier-lot",
     "deadline-receipt-tender-date-lot",
+    "deadline-receipt-tender-time-lot",
     "ojs-number",
     "buyer-name",
     "title-proc",
@@ -242,6 +245,17 @@ def parse_size(text):
 
 def compact(text):
     return re.sub(r"\s+", "", text or "").lower().replace("\u2013", "-").replace("\u2014", "-")
+
+
+def same_procedure(notice, other):
+    """Return whether two TED notices with the same procedure identifier share a reference number or title."""
+    reference = notice.get("internal-identifier-proc")
+    titles = {compact(title) for title in (notice.get("title-proc") or {}).values()}
+    if not reference and not titles:
+        return True
+    if reference and reference == other.get("internal-identifier-proc"):
+        return True
+    return bool(titles & {compact(title) for title in (other.get("title-proc") or {}).values()})
 
 
 def alphanumeric(text):
@@ -597,14 +611,21 @@ class Poland(BaseSpider):
         if procedure := notice.get("procedure-identifier"):
             procedure_notices = await self.ted_search(f'procedure-identifier="{procedure}"')
             if isinstance(procedure_notices, list) and procedure_notices:
-                notices = procedure_notices
+                # Some buyers reuse a procedure identifier across procedures.
+                notices = [n for n in procedure_notices if same_procedure(notice, n)] or notices
+        # Later notices can correct the reference number.
+        latest = max(
+            (n for n in notices if n.get("internal-identifier-proc") and n.get("notice-type", "").startswith("cn")),
+            key=lambda n: n.get("publication-date") or "",
+            default=notice,
+        )
         result = {
             "ted_notices": notices,
-            "deadline": self.ted_deadline(notice),
+            "deadline": self.procedure_deadline(notice, notices),
             # Fall back to the lots' identifiers, which some buyers use as the procedure's.
             "references": (
-                [notice["internal-identifier-proc"]]
-                if notice.get("internal-identifier-proc")
+                [latest["internal-identifier-proc"]]
+                if latest.get("internal-identifier-proc")
                 else list(
                     dict.fromkeys(LOT_SUFFIX_RE.sub("", ref) for ref in notice.get("internal-identifier-lot") or [])
                 )
@@ -618,7 +639,7 @@ class Poland(BaseSpider):
                 return {**result, "error": f"{publication_number}: {error}"}
             if xml:
                 urls = URL_DOCUMENT_RE.findall(xml)
-                if match := REFERENCE_NUMBER_RE.search(xml):
+                if match := TITLE_REFERENCE_RE.search(xml) or REFERENCE_NUMBER_RE.search(xml):
                     result["references"] = [match.group(1)]
         urls = [normalize_url(url) for url in urls]
         for url in urls:
@@ -689,9 +710,26 @@ class Poland(BaseSpider):
 
     @staticmethod
     def ted_deadline(notice):
-        return max(
-            filter(None, map(parse_datetime, notice.get("deadline-receipt-tender-date-lot") or [])), default=None
-        )
+        times = notice.get("deadline-receipt-tender-time-lot") or []
+        deadlines = [
+            parse_datetime(f"{date[:10]}T{times[i]}" if i < len(times) and times[i] else date)
+            for i, date in enumerate(notice.get("deadline-receipt-tender-date-lot") or [])
+        ]
+        return max(filter(None, deadlines), default=None)
+
+    @classmethod
+    def procedure_deadline(cls, notice, notices):
+        """Return the notice's bid deadline, as moved by the procedure's later notices published before it."""
+        deadline = cls.ted_deadline(notice)
+        start = notice.get("publication-date") or ""
+        for other in sorted(notices, key=lambda n: n.get("publication-date") or ""):
+            published = (other.get("publication-date") or "")[:10]
+            if published <= start[:10] or not deadline:
+                continue
+            if published > deadline.date().isoformat():
+                break
+            deadline = cls.ted_deadline(other) or deadline
+        return deadline
 
     @staticmethod
     def bzp_documents(resolutions, directory):
