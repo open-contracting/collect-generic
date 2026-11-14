@@ -332,17 +332,18 @@ def value_figures(text):
             and (
                 separator[0] != ":" and (separator[0].strip() not in DASHES or bool(gap[separator.end() :].strip()))
                 if separator
-                else j == len(figures)
+                else j == len(figures) or gap.rstrip().endswith(",")
             )
         )
     for j, figure in enumerate(figures):
         if trailing[j + 1]:
-            label = segments[j + 1][0]
+            # A label after its figure can run into the next text, so keep its start.
+            label = " ".join(segments[j + 1][0].strip(" ,.()-\u2013\u2212").split())[:150]
         elif len(segments[j]) > trailing[j]:
-            label = segments[j][-1]
+            label = " ".join(segments[j][-1].strip(" ,.()-\u2013\u2212").split())[-150:]
         else:
             label = ""
-        figure["label"] = " ".join(label.strip(" ,.()-\u2013\u2212").split())[-150:]
+        figure["label"] = label
     return [{key: figure[key] for key in ("label", "pln", "eur")} for figure in figures]
 
 
