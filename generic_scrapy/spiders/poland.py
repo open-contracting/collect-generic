@@ -44,6 +44,7 @@ URL_DOCUMENT_RE = re.compile(r"<URL_DOCUMENT>\s*([^<\s]+)")
 REFERENCE_NUMBER_RE = re.compile(r"<REFERENCE_NUMBER>\s*([^<]+?)\s*<")
 # Some buyers copy another procedure's REFERENCE_NUMBER, but give the right one in the title.
 TITLE_REFERENCE_RE = re.compile(r"<TITLE>\s*<P>[^<]*?\bnumer postępowania:?\s*([^\s<,;]+)", re.IGNORECASE)
+TITLE_RE = re.compile(r"<TITLE>\s*<P>([^<]+)")
 # Some buyers append the lot to the procedure's reference in a lot's identifier, e.g. "ZP.371.48.2024.KCCzęść 1".
 LOT_SUFFIX_RE = re.compile(r"\s*(?:część|cz\.)\s*\w+$", re.IGNORECASE)
 # The notice lists' path prefixes, like /pn/lasy/demand/notice/publicpzp/ or /app/demand/notice/public/.
@@ -80,6 +81,11 @@ MAX_NOTICE_PAGES = 30
 # The most days before its TED notice that an e-Zamówienia tender is searched for.
 TENDER_INITIATION_DAYS = 90
 MARKETPLANET_STATUSES = ("current", "during", "expired")
+# The most days between a TED notice's publication and the start of the Marketplanet procedure found by its title.
+MARKETPLANET_START_DAYS = 14
+# The longest title search, and the fewest characters of a title to compare.
+MARKETPLANET_QUERY_LENGTH = 60
+MARKETPLANET_TITLE_MATCH = 30
 # Marketplanet hosts its own platform (ezamawiajacy.pl) and buyers' white-label platforms.
 MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl")
 # Platform files that aren't key documents, downloaded last and only up to MAX_MINOR_FILE_SIZE.
@@ -256,6 +262,11 @@ def same_procedure(notice, other):
     if reference and reference == other.get("internal-identifier-proc"):
         return True
     return bool(titles & {compact(title) for title in (other.get("title-proc") or {}).values()})
+
+
+def reference_numbers(text):
+    """Split a reference like "nr z Platformy: 9090/IREZA3/02597/01189/23/P; nr sprawy: PZ.292.436.2023"."""
+    return [number for part in text.split(";") if (number := part.rsplit(":", 1)[-1].strip())]
 
 
 def alphanumeric(text):
@@ -516,7 +527,8 @@ class Poland(BaseSpider):
         platform = {}
         references = list(dict.fromkeys(ref for r in resolutions for ref in r.get("references", [])))
         if not tender_ids and urls and "marketplanet" in self.platforms and host(urls[0]).endswith(MARKETPLANET_HOSTS):
-            platform = await self.collect_marketplanet(urls[0], references, directory)
+            resolution = next((r for r in resolutions if r.get("title") and r.get("published")), None)
+            platform = await self.collect_marketplanet(urls[0], references, directory, resolution)
         elif not tender_ids and urls and "logintrade" in self.platforms and host(urls[0]).endswith("logintrade.net"):
             other_urls = [u for r in resolutions for u in r.get("other_urls", [])]
             platform = await self.collect_logintrade(urls[0], references, directory, other_urls)
@@ -558,7 +570,11 @@ class Poland(BaseSpider):
                 row["reason"] = "no file downloaded: " + "; ".join(f"{e} ({n})" for e, n in errors.most_common())
             else:
                 row["reason"] = platform.get("error") or (
-                    "no files on the procedure page" if platform else "no adapter for the platform"
+                    "no files on the procedure page"
+                    if platform
+                    else "no tender in progress on e-Zamówienia with the notice's number or title"
+                    if host(urls[0]) == "ezamowienia.gov.pl"
+                    else "no adapter for the platform"
                 )
         else:
             row["reason"] = "; ".join(r["error"] for r in resolutions if r.get("error")) or "no documents URL"
@@ -625,12 +641,14 @@ class Poland(BaseSpider):
             "deadline": self.procedure_deadline(notice, notices),
             # Fall back to the lots' identifiers, which some buyers use as the procedure's.
             "references": (
-                [latest["internal-identifier-proc"]]
+                reference_numbers(latest["internal-identifier-proc"])
                 if latest.get("internal-identifier-proc")
                 else list(
                     dict.fromkeys(LOT_SUFFIX_RE.sub("", ref) for ref in notice.get("internal-identifier-lot") or [])
                 )
             ),
+            "title": next(iter((notice.get("title-proc") or {}).values()), None),
+            "published": parse_datetime(notice.get("publication-date")),
         }
 
         urls = next(([u for u in notice.get(field) or [] if u] for field in TED_URL_FIELDS if notice.get(field)), [])
@@ -641,7 +659,9 @@ class Poland(BaseSpider):
             if xml:
                 urls = URL_DOCUMENT_RE.findall(xml)
                 if match := TITLE_REFERENCE_RE.search(xml) or REFERENCE_NUMBER_RE.search(xml):
-                    result["references"] = [match.group(1)]
+                    result["references"] = reference_numbers(match.group(1))
+                if match := TITLE_RE.search(xml):
+                    result["title"] = html.unescape(match.group(1))
         urls = [normalize_url(url) for url in urls]
         for url in urls:
             if match := TENDER_ID_RE.search(url):
@@ -931,7 +951,7 @@ class Poland(BaseSpider):
 
     # Platform adapters, for the notice_numbers mode.
 
-    async def collect_marketplanet(self, url, references, directory):
+    async def collect_marketplanet(self, url, references, directory, notice=None):
         """Find the procedure on Marketplanet and download its files. Return its URLs, deadline and files."""
         origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
         if MARKETPLANET_DETAILS_RE.search(url):
@@ -940,6 +960,8 @@ class Poland(BaseSpider):
             if not references:
                 return {"error": "no reference number to find the procedure on the platform"}
             details_urls = await self.marketplanet_search(origin, references)
+            if details_urls == [] and notice:
+                details_urls = await self.marketplanet_title_search(origin, notice["title"], notice["published"])
             if details_urls is None:
                 return {"error": "no notice lists on the platform's home page"}
             if not details_urls:
@@ -1058,6 +1080,45 @@ class Poland(BaseSpider):
                     )
         return list(dict.fromkeys(urls))
 
+    async def marketplanet_title_search(self, origin, title, published):
+        """Return the details URL of the only procedure with the notice's title that started near its publication."""
+        response = await self.fetch(f"{origin}/servlet/HomeServlet")
+        prefixes = list(dict.fromkeys(MARKETPLANET_LIST_RE.findall(response.text if response.status else "")))
+        # The search matches a substring, so search the title's longest run of words without punctuation.
+        words = max(re.split(r"[^\w\s-]+", title), key=len).strip()
+        query = words
+        if len(words) > MARKETPLANET_QUERY_LENGTH:
+            query = words[:MARKETPLANET_QUERY_LENGTH].rsplit(" ", 1)[0]
+        expected = alphanumeric(title)
+        urls = []
+        for prefix in prefixes:
+            details_prefix = prefix.replace("/publicpzp/", "/public/")
+            for status in MARKETPLANET_STATUSES:
+                search = await self.fetch(
+                    scrapy.FormRequest(
+                        f"{origin}{prefix}{status}/list",
+                        formdata={"demandName": query},
+                        meta={"dont_cache": True},
+                        dont_filter=True,
+                    )
+                )
+                if search.status != HTTPStatus.OK:
+                    continue
+                for tr in search.css("tr.dataRow"):
+                    # Long titles are truncated with "(..)".
+                    name = alphanumeric(_text(tr.xpath("td[2]")).removesuffix("(..)"))
+                    length = min(len(name), len(expected), 100)
+                    # The dates columns, like the procedure's start and its publication.
+                    dates = [parse_datetime(_text(td) or None) for td in tr.xpath("td[@data-width = '110']")]
+                    if (
+                        length >= MARKETPLANET_TITLE_MATCH
+                        and name[:length] == expected[:length]
+                        and any(d and abs((d - published).days) <= MARKETPLANET_START_DAYS for d in dates)
+                    ):
+                        urls.append(f"{origin}{details_prefix}{tr.attrib['id']}/details")
+        urls = list(dict.fromkeys(urls))
+        return urls if len(urls) == 1 else []
+
     async def collect_logintrade(self, url, references, directory, other_urls=()):
         """Find the procedure on Logintrade and download its files. Return its URLs, deadline and files."""
         origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
@@ -1085,6 +1146,8 @@ class Poland(BaseSpider):
                 # The statutory (PZP) procedures, in any state.
                 query = urlencode({"status": "", "szukaj": reference})
                 search = await self.fetch(f"{origin}/rejestracja/ustawowe.html?{query}")
+                if search.status == HTTPStatus.UNAUTHORIZED:
+                    return {"error": "the buyer's portal requires a login (HTTP 401)"}
                 if search.status != HTTPStatus.OK:
                     self.logger.warning("Logintrade search failed (HTTP %s): %s", search.status, origin)
                     continue
@@ -1157,7 +1220,10 @@ class Poland(BaseSpider):
                 # Archived procedures aren't public, but their result publications are.
                 if await self.eb2b_search(origin, references, "result-publication", "auction_id"):
                     return {"error": "procedure archived on the platform, so not public"}
-                return {"error": f"no procedure {' or '.join(references)} on the platform"}
+                return {
+                    "error": f"no procedure {' or '.join(references)} in the buyer's public list, which shows only "
+                    "procedures in progress"
+                }
 
         result = {"urls": [], "documents": [], "deadline": None}
         files = []
