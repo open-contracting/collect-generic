@@ -518,7 +518,8 @@ class Poland(BaseSpider):
         if not tender_ids and urls and "marketplanet" in self.platforms and host(urls[0]).endswith(MARKETPLANET_HOSTS):
             platform = await self.collect_marketplanet(urls[0], references, directory)
         elif not tender_ids and urls and "logintrade" in self.platforms and host(urls[0]).endswith("logintrade.net"):
-            platform = await self.collect_logintrade(urls[0], references, directory)
+            other_urls = [u for r in resolutions for u in r.get("other_urls", [])]
+            platform = await self.collect_logintrade(urls[0], references, directory, other_urls)
         elif not tender_ids and urls and "eb2b" in self.platforms and host(urls[0]).endswith("eb2b.com.pl"):
             platform = await self.collect_eb2b(urls[0], references, directory)
         if platform:
@@ -649,6 +650,7 @@ class Poland(BaseSpider):
             tender_id := await self.ezamowienia_tender_id(publication_number, notice)
         ):
             return {**result, "tender_id": tender_id}
+        result["other_urls"] = [normalize_url(u) for field in TED_URL_FIELDS for u in notice.get(field) or [] if u]
         return (
             {**result, "urls": list(dict.fromkeys(urls))}
             if urls
@@ -1056,11 +1058,25 @@ class Poland(BaseSpider):
                     )
         return list(dict.fromkeys(urls))
 
-    async def collect_logintrade(self, url, references, directory):
+    async def collect_logintrade(self, url, references, directory, other_urls=()):
         """Find the procedure on Logintrade and download its files. Return its URLs, deadline and files."""
         origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
         if LOGINTRADE_PROCEDURE_RE.search(url):
             procedure_urls = [url]
+            # A buyer can link another procedure's page as the documents URL, but its own as the submission URL.
+            candidates = [u for u in other_urls if LOGINTRADE_PROCEDURE_RE.search(u) and host(u) == host(url)]
+            if references and len(dict.fromkeys([url, *candidates])) > 1:
+                for candidate in dict.fromkeys([url, *candidates]):
+                    response = await self.fetch(candidate)
+                    signature = _text(
+                        response.xpath(
+                            "//h4[normalize-space() = 'Znak sprawy' or normalize-space() = 'Signature of the case']"
+                            "/following-sibling::div[1]"
+                        )
+                    )
+                    if any(compact(reference) in compact(signature) for reference in references):
+                        procedure_urls = [candidate]
+                        break
         else:
             if not references:
                 return {"error": "no reference number to find the procedure on the platform"}
