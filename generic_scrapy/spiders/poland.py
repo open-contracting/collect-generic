@@ -279,6 +279,12 @@ def reference_numbers(text):
     return [number for part in text.split(";") if (number := part.rsplit(":", 1)[-1].strip())]
 
 
+def words_in_order(reference, number):
+    """Return whether the reference's words occur in order among the number's, like "EZP 74/22" in "EZP nr 74/22"."""
+    words = iter(re.findall(r"\w+", number.lower()))
+    return all(word in words for word in re.findall(r"\w+", reference.lower()))
+
+
 def alphanumeric(text):
     return re.sub(r"\W+", "", text or "").lower()
 
@@ -1422,28 +1428,38 @@ class Poland(BaseSpider):
         if response.status != HTTPStatus.OK or not view_state:
             return []
         urls = []
+        table = "listaPostepowanForm:postepowaniaTabela"
         for reference in references:
-            # The "Tylko niezakończone" checkbox is left unticked, to include finished procedures.
-            search = await self.fetch(
-                self.smartpzp_request(
-                    response.url,
-                    cookiejar,
-                    {
-                        "javax.faces.partial.ajax": "true",
-                        "javax.faces.source": "wyszukPostepowanForm:wyszukaj",
-                        "javax.faces.partial.execute": "wyszukPostepowanForm",
-                        "javax.faces.partial.render": "listaPostepowanForm:postepowaniaTabela",
-                        "wyszukPostepowanForm:wyszukaj": "wyszukPostepowanForm:wyszukaj",
-                        "wyszukPostepowanForm": "wyszukPostepowanForm",
-                        "wyszukPostepowanForm:numerPostepowania": reference,
-                        "javax.faces.ViewState": view_state,
-                    },
+            # The search matches a substring, so if the reference misses (e.g. "EZP 74/22" for "EZP nr 74/22"), search
+            # its longest part with a digit, and compare the numbers' words.
+            parts = sorted((part for part in reference.split() if re.search(r"\d", part)), key=len, reverse=True)
+            rows = []
+            for query in dict.fromkeys([reference, *parts[:1]]):
+                # The "Tylko niezakończone" checkbox is left unticked, to include finished procedures.
+                search = await self.fetch(
+                    self.smartpzp_request(
+                        response.url,
+                        cookiejar,
+                        {
+                            "javax.faces.partial.ajax": "true",
+                            "javax.faces.source": "wyszukPostepowanForm:wyszukaj",
+                            "javax.faces.partial.execute": "wyszukPostepowanForm",
+                            "javax.faces.partial.render": table,
+                            "wyszukPostepowanForm:wyszukaj": "wyszukPostepowanForm:wyszukaj",
+                            "wyszukPostepowanForm": "wyszukPostepowanForm",
+                            "wyszukPostepowanForm:numerPostepowania": query,
+                            "javax.faces.ViewState": view_state,
+                        },
+                    )
                 )
-            )
-            table = "listaPostepowanForm:postepowaniaTabela"
-            for tr in smartpzp_update(search, table).xpath("//tr[@data-rk]"):
-                if compact(reference) not in compact(_text(tr.xpath("td[1]"))):
-                    continue
+                rows = [
+                    tr
+                    for tr in smartpzp_update(search, table).xpath("//tr[@data-rk]")
+                    if words_in_order(reference, _text(tr.xpath("td[1]")))
+                ]
+                if rows:
+                    break
+            for tr in rows:
                 # The procedure page opens by selecting its row and previewing it, which redirects to its URL.
                 form = {
                     "listaPostepowanForm": "listaPostepowanForm",
