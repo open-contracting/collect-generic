@@ -601,6 +601,11 @@ class Poland(BaseSpider):
         if not hits:
             return {"error": f"{notice}: not found in Board/Search"}
         hit = hits[0]
+        if hit.get("noticeType") == "AgreementIntentionNotice":
+            return {
+                "error": f"{notice}: single-source award (notice of intention to conclude a contract), "
+                "so no tender documents"
+            }
         result = {"deadline": parse_datetime(hit.get("submittingOffersDate"))}
         if hit.get("tenderId"):
             tender = await self.get_json(self.TENDER_URL.format(id=hit["tenderId"]))

@@ -90,7 +90,8 @@ NO_BREACH_RE = re.compile(r"ba?rak\w* (?:stwierdzonych )?narusze|nie stwierdz\w*
 BREACH_RE = re.compile(r"narusz", re.IGNORECASE)
 
 NOTICE_RE = re.compile(
-    r"20\d\d/[S$] \d{1,3}\s*-\s*\d{5,7}|20\d\d/BZP \d{6,8}(?:/\d{2})?|\d{6}-N-20\d\d|\b\d{5,8}\s*-\s*20\d\d\b"
+    r"20\d\d/[S$] \d{1,3}\s*-\s*\d{8}-20\d\d|20\d\d/[S$] \d{1,3}\s*-\s*\d{5,7}(?!\d)"
+    r"|20\d\d/BZP \d{6,8}(?:/\d{2})?|\d{6}-N-20\d\d|\b\d{5,8}\s*-\s*20\d\d\b"
 )
 # Same normalisation as oecd-poland's poc/build_labels.py.
 NOTICE_PATTERNS = (
@@ -98,6 +99,11 @@ NOTICE_PATTERNS = (
     (
         re.compile(r"(\d{4})/BZP\s*(\d+)(?:/(\d+))?"),
         lambda m: f"{m[1]}/BZP {int(m[2]):08d}" + (f"/{m[3]}" if m[3] else ""),
+    ),
+    # TED eForms after its OJ S issue, e.g. "2023/S 237-00747046-2023-PL"
+    (
+        re.compile(r"\d{4}\s*/\s*[S$]\s*\d+\s*[-\u2013]\s*(\d{8})\s*[-\u2013]\s*(20\d\d)"),
+        lambda m: f"{int(m[1])}-{m[2]}",
     ),
     # TED OJ S, e.g. "2023/S 055-162109". OCR can read S as $.
     (
