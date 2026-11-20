@@ -12,32 +12,36 @@ import json
 import re
 import signal
 import tarfile
-import unicodedata
-import zipfile
-import zoneinfo
 from http import HTTPStatus
 from pathlib import Path
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import quote, urlencode
 
 import scrapy
 from scrapy.http import JsonRequest
 
 from generic_scrapy.base_spiders.base_spider import BaseSpider
+from generic_scrapy.poland.common import (
+    HTML_PAGE_ERROR,
+    UNSAFE_FILENAME_RE,
+    _norm,
+    _text,
+    compact,
+    host,
+    parse_datetime,
+    role,
+    write_bytes,
+)
+from generic_scrapy.poland.eb2b import EB2B_LIMIT_ERROR, EB2B_LIMIT_RE, EB2B_SLOT, EB2BMixin
+from generic_scrapy.poland.logintrade import LogintradeMixin
+from generic_scrapy.poland.marketplanet import MARKETPLANET_HOSTS, MarketplanetMixin
+from generic_scrapy.poland.smartpzp import SMARTPZP_SLOT, SmartPZPMixin
 
-HTML_PAGE_ERROR = "HTML page instead of the file"
 HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
 JSON_ERROR_RE = re.compile(rb'\s*\{\s*"success"\s*:\s*false\b')
-EB2B_LIMIT_ERROR = "platform error: download limit"
-# For example: "Przekroczono dozwolony limit pobierania plików [...] (za 19 min. 30 sek.)", "(za  5 sek.)" or "(za  )"
-EB2B_LIMIT_RE = re.compile(r"limit pobierania.*?\(\w+\s*(?:(\d+) min\.)?\s*(?:(\d+) sek\.)?\s*\)", re.DOTALL)
-EB2B_SLOT = "eb2b.com.pl"
-UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
-
 # Matches an h3 prefix in a BZP announcement like "1.5.1.) Ulica" or
 # "1.4) Krajowy Numer Identyfikacyjny: REGON 180792174".
 # Group 1: dotted key (e.g. "1.5.1"). Group 2: label. Group 3 (optional): post-colon remainder.
 ANNOUNCEMENT_KEY_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)*)\.?\)\s*(.*?)(?::\s*(.*))?$", re.DOTALL)
-
 TENDER_ID_RE = re.compile(r"ocds-148610-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 PLATFORM_URL_RE = re.compile(r"Adres strony internetowej prowadzonego postępowania:?\s*(\S+)")
 TED_OJS_RE = re.compile(r"(\d{4})/S \d{3}-(\d{6})$")
@@ -49,25 +53,6 @@ TITLE_REFERENCE_RE = re.compile(r"<TITLE>\s*<P>[^<]*?\bnumer postępowania:?\s*(
 TITLE_RE = re.compile(r"<TITLE>\s*<P>([^<]+)")
 # Some buyers append the lot to the procedure's reference in a lot's identifier, e.g. "ZP.371.48.2024.KCCzęść 1".
 LOT_SUFFIX_RE = re.compile(r"\s*(?:część|cz\.)\s*\w+$", re.IGNORECASE)
-# The notice lists' path prefixes, like /pn/lasy/demand/notice/publicpzp/ or /app/demand/notice/public/.
-MARKETPLANET_LIST_RE = re.compile(
-    r"(/(?:pn/[^/\"'?#]+|app)/demand/notice/public(?:pzp)?/)(?:current|during|expired)/list"
-)
-MARKETPLANET_DETAILS_RE = re.compile(r"/demand/(?:notice/public/)?\d+/(?:notice/public/)?details")
-MARKETPLANET_DATETIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?")
-LOGINTRADE_PROCEDURE_RE = re.compile(r"/zapytania_email,(\d+),\w+\.html")
-LOGINTRADE_DATETIME_RE = re.compile(r"(\d{2})\.(\d{2})\.(\d{4}) - (\d{2}:\d{2})")
-EB2B_PROCEDURE_RE = re.compile(r"/open-preview-auction\.html/(\d+)")
-EB2B_PARAMS_PREFIX = 'App.initController("AuctionPreviewOpen", '
-SMARTPZP_SLOT = "portal.smartpzp.pl"
-SMARTPZP_PROCEDURE_RE = re.compile(r"/public/postepowanie\?postepowanie=(\d+)")
-SMARTPZP_DATETIME_RE = re.compile(r"(\d{2})-(\d{2})-(\d{4}) (\d{2}:\d{2})")
-SMARTPZP_FORM = "postepowanieTabs:listaDokumentowForm"
-SMARTPZP_TABLE = f"{SMARTPZP_FORM}:listaDokumentowTabela"
-SMARTPZP_ROWS = 10
-# The most documents downloaded in one archive.
-SMARTPZP_BATCH = 20
-
 # Documents in this state have no file ("Brak załącznika dla wskazanego dokumentu").
 DELETED_AUTOMATICALLY = "DeletedAutomatically"
 BOARD_NOTICE_TYPES = ("ContractNotice", "NoticeUpdateNotice")
@@ -90,49 +75,12 @@ TED_FIELDS = [
 MAX_NOTICE_PAGES = 30
 # The most days before its TED notice that an e-Zamówienia tender is searched for.
 TENDER_INITIATION_DAYS = 90
-MARKETPLANET_STATUSES = ("current", "during", "expired")
-# The most days between a TED notice's publication and the start of the Marketplanet procedure found by its title.
-MARKETPLANET_START_DAYS = 14
-# The longest title search, and the fewest characters of a title to compare.
-MARKETPLANET_QUERY_LENGTH = 60
-MARKETPLANET_TITLE_MATCH = 30
-# Marketplanet hosts its own platform (ezamawiajacy.pl) and buyers' white-label platforms.
-MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl")
 # Platform files that aren't key documents, downloaded last and only up to MAX_MINOR_FILE_SIZE.
 MINOR_ROLES = {"annex", "other"}
 # Larger annexes are usually design documentation, not the SWZ, OPZ or contract terms.
 MAX_MINOR_FILE_SIZE = 100 * 1024 * 1024
 # Controls collected at a time, in priority order. They share the per-domain download slots.
 CONCURRENT_CONTROLS = 4
-WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
-
-# Some platforms drop or transliterate Polish letters in filenames, so roles are matched without them.
-FOLD = str.maketrans("ąćęłńóśźż", "acelnoszz")
-# Checked in order against the document's name and filename.
-ROLES = [
-    ("notice_change", r"zmian\w* ogłosz|ogłoszeni\w* o zmianie|sprostowani"),
-    ("swz_change", r"zmian\w* (?:nr \d+ )?(?:tre[sś]ci )?(?:swz|idw|specyfikacji|instrukcji dla wykonawc)|modyfikacj"),
-    ("qa", r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp"),
-    # Appeals, calls to join them, buyers' answers and KIO's rulings. SWZ changes made due to an appeal match above.
-    # "odwoanie" is "odwołanie" with the ł dropped.
-    (
-        "appeal",
-        r"odwo[lł]?a(?:ni|ń)|o złożeniu odw|\bkio\b|wyrok|postępowani\w* odwoławcz|izb\w* odwoławcz|sprzeciw",
-    ),
-    ("opz", r"\bs?opz\b|opis\w* przedmiotu zamówienia|\bpfu\b|program\w* funkcjonalno"),
-    ("ppu", r"\bppu\b|projektowan\w* postanowie|wz[oó]r umowy|istotne postanowienia|warunki (?:kontraktu|umowy)"),
-    ("notice", r"^ogłoszeni|\bojs\d{3}\b"),
-    # The SWZ packaged with its annexes, like "Tom I - IDW z załącznikami", or a name that starts with the SWZ and
-    # isn't a numbered annex, like "SWZ - PUI Modele z załącznikami 3, 5-13" but not "SWZ_Z632025_Zał 1".
-    ("swz", r"(?:\bswz\b|\bidw\b|\btom i\b|instrukcj\w* dla wykonawc\w*)\W*(?:wraz z|z|\+)\s*załącznik"),
-    (
-        "swz",
-        r"^[\W\d]*(?:swz|idw|tom i|specyfikacj\w* warunk|instrukcj\w* dla wykonawc)\b(?!.*\bzał\.?\s*(?:nr\s*)?\d)",
-    ),
-    ("annex", r"załącznik|\bza[lł]\.?\s*(?:nr|\d)|\bzal\b"),
-    # Some buyers (e.g. PKP PLK) call the SWZ the "Instrukcja dla Wykonawców" (IDW), or volume I ("Tom I").
-    ("swz", r"\bswz\b|specyfikacj\w* warunk\w* zamówienia|\bidw\b|instrukcj\w* dla wykonawc|\btom i\b"),
-]
 PRIORITY_GROUPS = [
     ("cn_test", lambda row: row.get("cn_split") == "test"),
     ("art124_test", lambda row: row.get("art124_split") == "test"),
@@ -140,17 +88,13 @@ PRIORITY_GROUPS = [
     ("art124_train", lambda row: row.get("art124_split") == "train"),
     ("cn_aux", lambda row: row.get("cn_split") == "aux"),
 ]
-ROLES = [(name, re.compile(pattern.translate(FOLD))) for name, pattern in ROLES]
 GROUP_ORDER = {name: i for i, (name, _) in enumerate(PRIORITY_GROUPS)}
 STATUSES = ["not_found", "partial", "complete"]
-
-
-def _norm(text):
-    return " ".join((text or "").split())
-
-
-def _text(selector):
-    return _norm(" ".join(selector.xpath(".//text()").getall()))
+# Hosts misspelled in notices' documents URLs.
+HOST_TYPOS = {
+    "platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl",
+    "www.platformazakupowa-plk-sa.pl": "platformazakupowa.plk-sa.pl",
+}
 
 
 def _parse_announcement_html(html):
@@ -197,13 +141,6 @@ def _parse_announcement_html(html):
     return {"title": title, "sections": sections, "_unparsed": unparsed}
 
 
-def role(*names):
-    """Return the document's role (swz, opz, ppu, annex, swz_change, qa, appeal, notice, notice_change or other)."""
-    text = " ".join(_norm(name).lower().replace("_", " ") for name in names if name)
-    text = unicodedata.normalize("NFC", text).translate(FOLD)
-    return next((name for name, pattern in ROLES if pattern.search(text)), "other")
-
-
 def first_appeal_at(documents):
     """Return when the first appeal document was published, after which documents can reveal the appeal's grounds."""
     dates = [date for d in documents if d.get("role") == "appeal" and (date := parse_datetime(d.get("published_at")))]
@@ -232,36 +169,12 @@ def ted_publication_number(notice):
     return None
 
 
-# Hosts misspelled in notices' documents URLs.
-HOST_TYPOS = {
-    "platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl",
-    "www.platformazakupowa-plk-sa.pl": "platformazakupowa.plk-sa.pl",
-}
-
-
 def normalize_url(url):
     """Unescape HTML entities and correct misspelled hosts in a notice's documents URL."""
     url = html.unescape(url)
     for typo, correct in HOST_TYPOS.items():
         url = re.sub(rf"^(?:https?://)?{re.escape(typo)}", f"https://{correct}", url)
     return url
-
-
-def host(url):
-    return urlparse(url if "://" in url else f"https://{url}").netloc.lower().split(":")[0].removeprefix("www.")
-
-
-def parse_size(text):
-    """Parse a file size like ``731 KB`` or ``0.64 MB`` to bytes."""
-    if match := re.search(r"([\d.,]+)\s*(B|KB|MB|GB)\b", text or "", re.IGNORECASE):
-        return int(
-            float(match.group(1).replace(",", ".")) * 1024 ** ["B", "KB", "MB", "GB"].index(match.group(2).upper())
-        )
-    return None
-
-
-def compact(text):
-    return re.sub(r"\s+", "", text or "").lower().replace("\u2013", "-").replace("\u2014", "-")
 
 
 def same_procedure(notice, other):
@@ -280,29 +193,12 @@ def reference_numbers(text):
     return [number for part in text.split(";") if (number := part.rsplit(":", 1)[-1].strip())]
 
 
-def words_in_order(reference, number):
-    """Return whether the reference's words occur in order among the number's, like "EZP 74/22" in "EZP nr 74/22"."""
-    words = iter(re.findall(r"\w+", number.lower()))
-    return all(word in words for word in re.findall(r"\w+", reference.lower()))
+def write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def alphanumeric(text):
-    return re.sub(r"\W+", "", text or "").lower()
-
-
-def parse_datetime(value):
-    """Parse an ISO 8601 datetime, or a TED date like ``2026-03-09+01:00``. Times without offsets are Polish."""
-    if not value:
-        return None
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?", value):
-        return dt.datetime.fromisoformat(value).replace(tzinfo=WARSAW)
-    value = value.replace("Z", "+00:00")
-    if re.match(r"\d{4}-\d{2}-\d{2}[+-]", value):
-        value = f"{value[:10]}T23:59:59{value[10:]}"
-    return dt.datetime.fromisoformat(value)
-
-
-class Poland(BaseSpider):
+class Poland(MarketplanetMixin, LogintradeMixin, EB2BMixin, SmartPZPMixin, BaseSpider):
     """
     Per-procedure file collector for the Polish public-procurement portal (ezamowienia.gov.pl).
 
@@ -976,607 +872,6 @@ class Poland(BaseSpider):
 
     # Platform adapters, for the notice_numbers mode.
 
-    async def collect_marketplanet(self, url, references, directory, notice=None):
-        """Find the procedure on Marketplanet and download its files. Return its URLs, deadline and files."""
-        origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
-        if MARKETPLANET_DETAILS_RE.search(url):
-            details_urls = [url]
-        else:
-            if not references:
-                return {"error": "no reference number to find the procedure on the platform"}
-            details_urls = await self.marketplanet_search(origin, references)
-            if details_urls == [] and notice:
-                details_urls = await self.marketplanet_title_search(origin, notice["title"], notice["published"])
-            if details_urls is None:
-                return {"error": "no notice lists on the platform's home page"}
-            if not details_urls:
-                return {"error": f"no procedure {' or '.join(references)} on the platform"}
-
-        result = {"urls": [], "documents": [], "deadline": None}
-        files = []
-        procedures = []
-        for details_url in details_urls:
-            response = await self.fetch(details_url)
-            if response.status != HTTPStatus.OK or not MARKETPLANET_DETAILS_RE.search(response.url):
-                result["error"] = f"procedure page unavailable (HTTP {response.status})"
-                continue
-            match = re.search(r"/(\d+)/details", response.url)
-            subdirectory = f"marketplanet-{match.group(1)}"
-            result["urls"].append(response.url)
-            deadline = response.xpath(
-                "//fieldset[span[contains(., 'składania ofert') or contains(., 'zbierania ofert')]]/section"
-            ).xpath("normalize-space()")
-            if match := MARKETPLANET_DATETIME_RE.match(deadline.get(default="")):
-                result["deadline"] = max(filter(None, [result["deadline"], parse_datetime(match.group(0))]))
-
-            # The procedure's folders (like the results) are subpages, with the same files table.
-            pages = [("procedure", response)]
-            for href in dict.fromkeys(response.xpath("//a[contains(@href, 'details?folder=')]/@href").getall()):
-                folder = re.search(r"folder=(\w+)", href).group(1)
-                folder_response = await self.fetch(response.urljoin(href))
-                if folder_response.status == HTTPStatus.OK:
-                    pages.append((f"procedure-{folder}", folder_response))
-            for name, page in pages:
-                write_bytes(directory / subdirectory / f"{name}.html", page.body)
-            procedure_files = self.marketplanet_files(pages, origin, subdirectory)
-            procedures.append((subdirectory, [(name, page.url) for name, page in pages]))
-            files.extend(procedure_files)
-            result["documents"].extend(entry for entry, _, _ in procedure_files)
-        await self.download_files(directory, files)
-
-        # A file's link expires a while after the page view, so re-read the pages for new links, and retry.
-        for _ in range(2):
-            expired = {path: entry for entry, path, _ in files if entry.get("error") == HTML_PAGE_ERROR}
-            if not expired:
-                break
-            retry = []
-            for subdirectory, page_urls in procedures:
-                pages = [(name, await self.fetch(page_url)) for name, page_url in page_urls]
-                pages = [(name, page) for name, page in pages if page.status == HTTPStatus.OK]
-                for _, path, request in self.marketplanet_files(pages, origin, subdirectory):
-                    if entry := expired.get(path):
-                        entry.pop("error")
-                        entry["url"] = request.url
-                        retry.append((entry, path, request))
-            await self.download_files(directory, retry)
-        return result
-
-    def marketplanet_files(self, pages, origin, subdirectory):
-        """Return the ``(entry, path, request)`` of each file in the pages' files tables."""
-        files = []
-        tokens = set()
-        for _, page in pages:
-            for tr in page.xpath("//tr[.//input[contains(@name, 'selectedFile')]]"):
-                token = tr.xpath(".//input[contains(@name, 'selectedFile')]/@value").get()
-                if token in tokens:
-                    continue
-                tokens.add(token)
-                # A folder's files are read from its subpage. Skip it after numbering it, to keep the files' paths.
-                if tr.xpath(".//a[contains(@href, 'details?folder=')]"):
-                    continue
-                title = _text(tr.xpath("td[contains(@class, 'text')][1]"))
-                published = MARKETPLANET_DATETIME_RE.match(_text(tr.xpath("td[@class='date-time']")))
-                entry = {
-                    "path": None,
-                    "url": f"{origin}/repository/download/{token}",
-                    "title": title,
-                    "file_name": title,
-                    "size": parse_size(_text(tr.xpath("td[contains(@class, 'medium')]"))),
-                    "published_at": parse_datetime(published.group(0)).isoformat() if published else None,
-                    "role": role(title),
-                    "superseded": False,
-                    "state": _norm(
-                        tr.xpath("ancestor::div[contains(@class, 'mp_box')][1]//h2").xpath("string()").get()
-                    ),
-                }
-                # The path is from the file's position, as its link changes. Downloads can't be cached.
-                path = Path(subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{len(tokens):03d}__{title}"))
-                request = scrapy.Request(entry["url"], method="POST", meta={"dont_cache": True}, dont_filter=True)
-                files.append((entry, path, request))
-        return files
-
-    async def marketplanet_search(self, origin, references):
-        """Return the details URLs of the procedures matching a reference, or None if there are no notice lists."""
-        response = await self.fetch(f"{origin}/servlet/HomeServlet")
-        prefixes = list(dict.fromkeys(MARKETPLANET_LIST_RE.findall(response.text if response.status else "")))
-        if not prefixes:
-            return None
-        urls = []
-        for prefix in prefixes:
-            # The PZP lists link to the details page outside the "publicpzp" path.
-            details_prefix = prefix.replace("/publicpzp/", "/public/")
-            for reference in references:
-                for status in MARKETPLANET_STATUSES:
-                    search = await self.fetch(
-                        scrapy.FormRequest(
-                            f"{origin}{prefix}{status}/list",
-                            formdata={"demandNumber": reference},
-                            meta={"dont_cache": True},
-                            dont_filter=True,
-                        )
-                    )
-                    if search.status != HTTPStatus.OK:
-                        self.logger.warning("Marketplanet search failed (HTTP %s): %s", search.status, origin)
-                        continue
-                    urls.extend(
-                        f"{origin}{details_prefix}{tr.attrib['id']}/details"
-                        for tr in search.css("tr.dataRow")
-                        if compact(reference) in compact(_text(tr.xpath("td[1]")))
-                    )
-        return list(dict.fromkeys(urls))
-
-    async def marketplanet_title_search(self, origin, title, published):
-        """Return the details URL of the only procedure with the notice's title that started near its publication."""
-        response = await self.fetch(f"{origin}/servlet/HomeServlet")
-        prefixes = list(dict.fromkeys(MARKETPLANET_LIST_RE.findall(response.text if response.status else "")))
-        # The search matches a substring, so search the title's longest run of words without punctuation.
-        words = max(re.split(r"[^\w\s-]+", title), key=len).strip()
-        query = words
-        if len(words) > MARKETPLANET_QUERY_LENGTH:
-            query = words[:MARKETPLANET_QUERY_LENGTH].rsplit(" ", 1)[0]
-        expected = alphanumeric(title)
-        urls = []
-        for prefix in prefixes:
-            details_prefix = prefix.replace("/publicpzp/", "/public/")
-            for status in MARKETPLANET_STATUSES:
-                search = await self.fetch(
-                    scrapy.FormRequest(
-                        f"{origin}{prefix}{status}/list",
-                        formdata={"demandName": query},
-                        meta={"dont_cache": True},
-                        dont_filter=True,
-                    )
-                )
-                if search.status != HTTPStatus.OK:
-                    continue
-                for tr in search.css("tr.dataRow"):
-                    # Long titles are truncated with "(..)".
-                    name = alphanumeric(_text(tr.xpath("td[2]")).removesuffix("(..)"))
-                    length = min(len(name), len(expected), 100)
-                    # The dates columns, like the procedure's start and its publication.
-                    dates = [parse_datetime(_text(td) or None) for td in tr.xpath("td[@data-width = '110']")]
-                    if (
-                        length >= MARKETPLANET_TITLE_MATCH
-                        and name[:length] == expected[:length]
-                        and any(d and abs((d - published).days) <= MARKETPLANET_START_DAYS for d in dates)
-                    ):
-                        urls.append(f"{origin}{details_prefix}{tr.attrib['id']}/details")
-        urls = list(dict.fromkeys(urls))
-        return urls if len(urls) == 1 else []
-
-    async def collect_logintrade(self, url, references, directory, other_urls=()):
-        """Find the procedure on Logintrade and download its files. Return its URLs, deadline and files."""
-        origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
-        if LOGINTRADE_PROCEDURE_RE.search(url):
-            procedure_urls = [url]
-            # A buyer can link another procedure's page as the documents URL, but its own as the submission URL.
-            candidates = [u for u in other_urls if LOGINTRADE_PROCEDURE_RE.search(u) and host(u) == host(url)]
-            if references and len(dict.fromkeys([url, *candidates])) > 1:
-                for candidate in dict.fromkeys([url, *candidates]):
-                    response = await self.fetch(candidate)
-                    signature = _text(
-                        response.xpath(
-                            "//h4[normalize-space() = 'Znak sprawy' or normalize-space() = 'Signature of the case']"
-                            "/following-sibling::div[1]"
-                        )
-                    )
-                    if any(compact(reference) in compact(signature) for reference in references):
-                        procedure_urls = [candidate]
-                        break
-        else:
-            if not references:
-                return {"error": "no reference number to find the procedure on the platform"}
-            procedure_urls = []
-            for reference in references:
-                # The statutory (PZP) procedures, in any state.
-                query = urlencode({"status": "", "szukaj": reference})
-                search = await self.fetch(f"{origin}/rejestracja/ustawowe.html?{query}")
-                if search.status == HTTPStatus.UNAUTHORIZED:
-                    return {"error": "the buyer's portal requires a login (HTTP 401)"}
-                if search.status != HTTPStatus.OK:
-                    self.logger.warning("Logintrade search failed (HTTP %s): %s", search.status, origin)
-                    continue
-                for a in search.xpath("//tr[td]//a[contains(@href, 'zapytania_email')]"):
-                    if compact(reference) in compact(_text(a.xpath("ancestor::tr[1]/td[3]"))):
-                        procedure_urls.append(search.urljoin(a.attrib["href"]))
-            procedure_urls = list(dict.fromkeys(procedure_urls))
-            if not procedure_urls:
-                return {"error": f"no procedure {' or '.join(references)} on the platform"}
-
-        result = {"urls": [], "documents": [], "deadline": None}
-        files = []
-        for procedure_url in procedure_urls:
-            response = await self.fetch(procedure_url)
-            match = LOGINTRADE_PROCEDURE_RE.search(response.url)
-            if response.status != HTTPStatus.OK or not match:
-                result["error"] = f"procedure page unavailable (HTTP {response.status})"
-                continue
-            subdirectory = f"logintrade-{match.group(1)}"
-            write_bytes(directory / subdirectory / "procedure.html", response.body)
-            result["urls"].append(response.url)
-            # Scrapy is served the English page.
-            deadline = response.xpath(
-                "//h4[normalize-space() = 'Termin składania' or normalize-space() = 'Deadline for making offers']"
-                "/following-sibling::div[1]"
-            )
-            if match := MARKETPLANET_DATETIME_RE.match(_text(deadline)):
-                result["deadline"] = max(filter(None, [result["deadline"], parse_datetime(match.group(0))]))
-
-            # The page can list an attachment twice (e.g. under the notice and in the document list).
-            hrefs = set()
-            for div in response.css("div.attachment"):
-                href = div.xpath(".//a[contains(@href, 'getAttachmentUnlogged')]/@href").get()
-                if not href or href in hrefs:
-                    continue
-                hrefs.add(href)
-                title = _text(div.css(".attachment-name"))
-                published = LOGINTRADE_DATETIME_RE.match(_text(div.css(".attachment-date")))
-                entry = {
-                    "path": None,
-                    "url": response.urljoin(href),
-                    "title": title,
-                    "file_name": title,
-                    "size": parse_size(_text(div.css(".attachment-size"))),
-                    "published_at": (
-                        parse_datetime("{2}-{1}-{0} {3}".format(*published.groups())).isoformat()
-                        if published
-                        else None
-                    ),
-                    "role": role(title),
-                    "superseded": False,
-                    "state": None,
-                }
-                path = Path(subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{len(hrefs):03d}__{title}"))
-                files.append((entry, path, scrapy.Request(entry["url"], dont_filter=True)))
-                result["documents"].append(entry)
-        await self.download_files(directory, files)
-        return result
-
-    async def collect_eb2b(self, url, references, directory):
-        """Find the procedure on eB2B and download its files. Return its URLs, deadline and files."""
-        origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
-        if match := EB2B_PROCEDURE_RE.search(url):
-            ids = [match.group(1)]
-        else:
-            if not references:
-                return {"error": "no reference number to find the procedure on the platform"}
-            ids = await self.eb2b_search(origin, references)
-            if not ids:
-                # Archived procedures aren't public, but their result publications are.
-                if await self.eb2b_search(origin, references, "result-publication", "auction_id"):
-                    return {"error": "procedure archived on the platform, so not public"}
-                return {
-                    "error": f"no procedure {' or '.join(references)} in the buyer's public list, which shows only "
-                    "procedures in progress"
-                }
-
-        result = {"urls": [], "documents": [], "deadline": None}
-        files = []
-        for procedure_id in ids:
-            procedure_url = f"{origin}/open-preview-auction.html/{procedure_id}"
-            response = await self.fetch(self.eb2b_request(procedure_url))
-            start = response.text.find(EB2B_PARAMS_PREFIX) if response.status == HTTPStatus.OK else -1
-            if start == -1:
-                result["error"] = (
-                    "procedure not public on the platform"
-                    if response.status == HTTPStatus.OK
-                    else f"procedure page unavailable (HTTP {response.status})"
-                )
-                continue
-            auction = json.JSONDecoder().raw_decode(response.text, start + len(EB2B_PARAMS_PREFIX))[0]["auction"]
-            subdirectory = f"eb2b-{procedure_id}"
-            write_bytes(directory / subdirectory / "procedure.html", response.body)
-            result["urls"].append(procedure_url)
-            end = auction.get("stage_offers_end_date") or auction.get("offers_attachments_deadline_date") or ""
-            if deadline := parse_datetime(end[:16] or None):
-                result["deadline"] = max(filter(None, [result["deadline"], deadline]))
-            if not auction.get("attachments_public_access"):
-                result["error"] = "attachments are only for registered participants"
-                continue
-
-            query = urlencode({"id": procedure_id, "deleted": 0, "bidder": 0})
-            listing = await self.fetch(self.eb2b_request(f"{origin}/auction/auction/list-attachment?{query}"))
-            if listing.status != HTTPStatus.OK:
-                result["error"] = f"attachments list unavailable (HTTP {listing.status})"
-                continue
-            write_bytes(directory / subdirectory / "attachments.json", listing.body)
-            for attachment in json.loads(listing.body).get("data") or []:
-                name = attachment["name"]
-                if attachment.get("extension") and not name.lower().endswith(f".{attachment['extension'].lower()}"):
-                    name = f"{name}.{attachment['extension']}"
-                published = (attachment.get("publication_date") or attachment.get("created_at") or "")[:16]
-                entry = {
-                    "path": None,
-                    "url": f"{origin}/auction/auction/download-attachment/id/{attachment['id']}",
-                    "title": attachment["name"],
-                    "file_name": name,
-                    "size": attachment.get("size"),
-                    "published_at": parse_datetime(published).isoformat() if published else None,
-                    "role": role(attachment["name"], name),
-                    "superseded": attachment.get("is_current") is False,
-                    "state": attachment.get("type_name"),
-                }
-                path = Path(subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{attachment['id']}__{name}"))
-                files.append((entry, path, self.eb2b_request(entry["url"])))
-                result["documents"].append(entry)
-        await self.download_files(directory, files)
-        return result
-
-    @staticmethod
-    def eb2b_request(url):
-        # The English pages of some procedures are an error page. Downloads redirect to signed S3 URLs that expire.
-        return scrapy.Request(
-            url,
-            headers={"Accept-Language": "pl"},
-            meta={"dont_cache": True, "download_slot": EB2B_SLOT},
-            dont_filter=True,
-        )
-
-    async def eb2b_search(self, origin, references, controller="auction", id_field="id"):
-        """Return the IDs of the procedures whose number contains one of ``references``, ignoring punctuation."""
-        ids = []
-        for reference in references:
-            # The filter matches substrings. If the full reference misses (e.g. on dashes, or if the notice's
-            # reference includes the title), try its parts that look like reference numbers (e.g. DZZK/7/BM/2024),
-            # then its dotted numbers (e.g. 3.2410.6.2023 in "O.Sz.D-3.2410.6.2023" for "O/Sz.D-3.2410.6.2023").
-            parts = [part for part in reference.split() if re.fullmatch(r"(?=.*\d)(?=.*[./-])\S{6,}", part)]
-            numbers = re.findall(r"\d+(?:\.\d+){2,}", reference)
-            for value in dict.fromkeys([reference, *parts, *numbers]):
-                query = urlencode(
-                    {"filter": json.dumps([{"property": "auction_number", "value": value}]), "start": 0, "limit": 100}
-                )
-                response = await self.fetch(self.eb2b_request(f"{origin}/auction/{controller}/list?{query}"))
-                if response.status != HTTPStatus.OK:
-                    self.logger.warning("eB2B search failed (HTTP %s): %s", response.status, origin)
-                    break
-                matches = [
-                    str(auction[id_field])
-                    for auction in json.loads(response.body).get("data") or []
-                    if any(
-                        alphanumeric(part) in alphanumeric(auction.get("auction_number"))
-                        for part in [reference, *parts]
-                    )
-                ]
-                if matches:
-                    ids.extend(matches)
-                    break
-        return list(dict.fromkeys(ids))
-
-    async def collect_smartpzp(self, url, references, directory):
-        """Find the procedure on SmartPZP and download its files. Return its URLs, deadline and files."""
-        # The pages are JSF views, whose state is kept in the session, so each control has its own cookie jar.
-        cookiejar = f"smartpzp-{directory.name}"
-        if SMARTPZP_PROCEDURE_RE.search(url):
-            procedure_urls = [url]
-        else:
-            if not references:
-                return {"error": "no reference number to find the procedure on the platform"}
-            parsed = urlparse(url)
-            buyer = f"{parsed.scheme}://{parsed.netloc}/{parsed.path.strip('/').split('/')[0]}/"
-            procedure_urls = await self.smartpzp_search(buyer, references, cookiejar)
-            if not procedure_urls:
-                return {"error": f"no procedure {' or '.join(references)} on the platform"}
-
-        result = {"urls": [], "documents": [], "deadline": None}
-        for procedure_url in procedure_urls:
-            response = await self.fetch(self.smartpzp_request(procedure_url, cookiejar))
-            match = re.search(r'listaDokumentowTabela",\{.*?rowCount:(\d+)', response.text if response.status else "")
-            if response.status != HTTPStatus.OK or not match:
-                result["error"] = f"procedure page unavailable (HTTP {response.status})"
-                continue
-            subdirectory = f"smartpzp-{SMARTPZP_PROCEDURE_RE.search(procedure_url).group(1)}"
-            write_bytes(directory / subdirectory / "procedure.html", response.body)
-            result["urls"].append(procedure_url)
-            deadline = response.xpath(
-                "//span[normalize-space() = 'Termin składania ofert']"
-                "/following::span[@class = 'pzp-outputtext-content'][1]"
-            )
-            if match_deadline := SMARTPZP_DATETIME_RE.match(_text(deadline)):
-                deadline = parse_datetime("{2}-{1}-{0} {3}".format(*match_deadline.groups()))
-                result["deadline"] = max(filter(None, [result["deadline"], deadline]))
-
-            view_state = response.xpath("//input[@name = 'javax.faces.ViewState']/@value").get()
-            rows = response.xpath(f"//tbody[@id = '{SMARTPZP_TABLE}_data']/tr[@data-rk]")
-            for first in range(SMARTPZP_ROWS, int(match.group(1)), SMARTPZP_ROWS):
-                page = await self.fetch(
-                    self.smartpzp_request(
-                        procedure_url,
-                        cookiejar,
-                        {
-                            "javax.faces.partial.ajax": "true",
-                            "javax.faces.source": SMARTPZP_TABLE,
-                            "javax.faces.partial.execute": SMARTPZP_TABLE,
-                            "javax.faces.partial.render": SMARTPZP_TABLE,
-                            SMARTPZP_TABLE: SMARTPZP_TABLE,
-                            f"{SMARTPZP_TABLE}_pagination": "true",
-                            f"{SMARTPZP_TABLE}_first": str(first),
-                            f"{SMARTPZP_TABLE}_rows": str(SMARTPZP_ROWS),
-                            f"{SMARTPZP_TABLE}_encodeFeature": "true",
-                            SMARTPZP_FORM: SMARTPZP_FORM,
-                            "javax.faces.ViewState": view_state,
-                        },
-                    )
-                )
-                rows.extend(smartpzp_update(page, SMARTPZP_TABLE).xpath("//tr[@data-rk]"))
-
-            entries = {}
-            for tr in rows:
-                name = _text(tr.xpath("td[2]"))
-                published = SMARTPZP_DATETIME_RE.match(_text(tr.xpath("td[3]")))
-                entries[tr.attrib["data-rk"]] = {
-                    "path": None,
-                    "url": procedure_url,
-                    "title": name,
-                    "file_name": name,
-                    "size": None,
-                    "published_at": (
-                        parse_datetime("{2}-{1}-{0} {3}".format(*published.groups())).isoformat()
-                        if published
-                        else None
-                    ),
-                    "role": role(name),
-                    "superseded": False,
-                    "state": None,
-                }
-            result["documents"].extend(entries.values())
-            await self.smartpzp_download(procedure_url, cookiejar, view_state, entries, directory, subdirectory)
-        return result
-
-    async def smartpzp_search(self, buyer, references, cookiejar):
-        """Return the URLs of the buyer's procedures, finished or not, whose number is one of ``references``."""
-        response = await self.fetch(self.smartpzp_request(buyer, cookiejar))
-        view_state = response.xpath("//input[@name = 'javax.faces.ViewState']/@value").get()
-        if response.status != HTTPStatus.OK or not view_state:
-            return []
-        urls = []
-        table = "listaPostepowanForm:postepowaniaTabela"
-        for reference in references:
-            # The search matches a substring, so if the reference misses (e.g. "EZP 74/22" for "EZP nr 74/22"), search
-            # its longest part with a digit, and compare the numbers' words.
-            parts = sorted((part for part in reference.split() if re.search(r"\d", part)), key=len, reverse=True)
-            rows = []
-            for query in dict.fromkeys([reference, *parts[:1]]):
-                # The "Tylko niezakończone" checkbox is left unticked, to include finished procedures.
-                search = await self.fetch(
-                    self.smartpzp_request(
-                        response.url,
-                        cookiejar,
-                        {
-                            "javax.faces.partial.ajax": "true",
-                            "javax.faces.source": "wyszukPostepowanForm:wyszukaj",
-                            "javax.faces.partial.execute": "wyszukPostepowanForm",
-                            "javax.faces.partial.render": table,
-                            "wyszukPostepowanForm:wyszukaj": "wyszukPostepowanForm:wyszukaj",
-                            "wyszukPostepowanForm": "wyszukPostepowanForm",
-                            "wyszukPostepowanForm:numerPostepowania": query,
-                            "javax.faces.ViewState": view_state,
-                        },
-                    )
-                )
-                rows = [
-                    tr
-                    for tr in smartpzp_update(search, table).xpath("//tr[@data-rk]")
-                    if words_in_order(reference, _text(tr.xpath("td[1]")))
-                ]
-                if rows:
-                    break
-            for tr in rows:
-                # The procedure page opens by selecting its row and previewing it, which redirects to its URL.
-                form = {
-                    "listaPostepowanForm": "listaPostepowanForm",
-                    f"{table}_selection": tr.attrib["data-rk"],
-                    "javax.faces.ViewState": view_state,
-                }
-                await self.fetch(
-                    self.smartpzp_request(
-                        response.url,
-                        cookiejar,
-                        {
-                            **form,
-                            "javax.faces.partial.ajax": "true",
-                            "javax.faces.source": table,
-                            "javax.faces.partial.execute": table,
-                            "javax.faces.partial.render": "listaPostepowanForm:buttony",
-                            "javax.faces.behavior.event": "rowSelect",
-                            "javax.faces.partial.event": "rowSelect",
-                            f"{table}_instantSelection": tr.attrib["data-rk"],
-                        },
-                    )
-                )
-                preview = await self.fetch(
-                    self.smartpzp_request(
-                        response.url,
-                        cookiejar,
-                        {**form, "listaPostepowanForm:podgladPublicId": "listaPostepowanForm:podgladPublicId"},
-                    )
-                )
-                if SMARTPZP_PROCEDURE_RE.search(preview.url):
-                    urls.append(preview.url)
-        return list(dict.fromkeys(urls))
-
-    async def smartpzp_download(self, procedure_url, cookiejar, view_state, entries, directory, subdirectory):
-        """Download the documents in archives of files with distinct names, and set each entry's path or error."""
-        batches = []
-        for key, entry in entries.items():
-            batch = next(
-                (
-                    b
-                    for b in batches
-                    if len(b) < SMARTPZP_BATCH and all(entries[k]["file_name"] != entry["file_name"] for k in b)
-                ),
-                None,
-            )
-            if batch is None:
-                batches.append(batch := [])
-            batch.append(key)
-
-        for batch in batches:
-            response = await self.smartpzp_selection(procedure_url, cookiejar, view_state, batch)
-            members = {}
-            if response.status == HTTPStatus.OK and response.body.startswith(b"PK\x03\x04"):
-                # Read the archive in memory: it's untrusted, so nothing is extracted to disk.
-                with zipfile.ZipFile(io.BytesIO(response.body)) as archive:
-                    for info in archive.infolist():
-                        if not info.is_dir():
-                            members[unicodedata.normalize("NFC", Path(zip_name(info)).name)] = archive.read(info)
-            else:
-                # Some buyers' archives fail, so download one file at a time. A single file isn't archived.
-                for key in batch if len(batch) > 1 else []:
-                    response = await self.smartpzp_selection(procedure_url, cookiejar, view_state, [key])
-                    if response.status == HTTPStatus.OK and b"<html" not in response.body[:512]:
-                        members[unicodedata.normalize("NFC", entries[key]["file_name"])] = response.body
-                if len(batch) == 1 and response.status == HTTPStatus.OK and b"<html" not in response.body[:512]:
-                    members[unicodedata.normalize("NFC", entries[batch[0]]["file_name"])] = response.body
-            for key in batch:
-                entry = entries[key]
-                if (body := members.get(unicodedata.normalize("NFC", entry["file_name"]))) is None:
-                    entry["error"] = (
-                        f"HTTP {response.status}" if response.status != HTTPStatus.OK else "not in the download"
-                    )
-                    continue
-                path = Path(subdirectory, "attachments", UNSAFE_FILENAME_RE.sub("_", f"{key}__{entry['file_name']}"))
-                write_bytes(directory / path, body)
-                entry["path"] = str(Path(directory.name, path))
-                entry["size"] = len(body)
-
-    async def smartpzp_selection(self, procedure_url, cookiejar, view_state, keys):
-        """Select documents and download them: an archive, or the file if there's one."""
-        form = {
-            SMARTPZP_FORM: SMARTPZP_FORM,
-            f"{SMARTPZP_TABLE}_selection": ",".join(keys),
-            "javax.faces.ViewState": view_state,
-        }
-        # Selecting the rows renders the download button, which the download submits.
-        await self.fetch(
-            self.smartpzp_request(
-                procedure_url,
-                cookiejar,
-                {
-                    **form,
-                    "javax.faces.partial.ajax": "true",
-                    "javax.faces.source": SMARTPZP_TABLE,
-                    "javax.faces.partial.execute": SMARTPZP_TABLE,
-                    "javax.faces.partial.render": f"{SMARTPZP_FORM}:przyciskiDokumentacja",
-                    "javax.faces.behavior.event": "rowSelectCheckbox",
-                    "javax.faces.partial.event": "rowSelectCheckbox",
-                    f"{SMARTPZP_TABLE}_instantSelection": keys[-1],
-                },
-            )
-        )
-        request = self.smartpzp_request(
-            procedure_url, cookiejar, {**form, f"{SMARTPZP_FORM}:downloadBtn": f"{SMARTPZP_FORM}:downloadBtn"}
-        )
-        request.meta.update({"download_timeout": 1800, "max_retry_times": 1})
-        return await self.fetch(request)
-
-    @staticmethod
-    def smartpzp_request(url, cookiejar, formdata=None):
-        meta = {"dont_cache": True, "download_slot": SMARTPZP_SLOT, "cookiejar": cookiejar}
-        if formdata is None:
-            return scrapy.Request(url, meta=meta, dont_filter=True)
-        headers = {"Faces-Request": "partial/ajax"} if "javax.faces.partial.ajax" in formdata else {}
-        return scrapy.FormRequest(url, formdata=formdata, headers=headers, meta=meta, dont_filter=True)
-
     async def download_files(self, directory, files):
         """Download each ``(entry, path, request)``, key documents first, and set the entry's path or error."""
         for entry, path, request in sorted(files, key=lambda file: file[0]["role"] in MINOR_ROLES):
@@ -1675,34 +970,3 @@ class Poland(BaseSpider):
             self.logger.warning("TED search failed (HTTP %s): %s", response.status, query)
             return response.status
         return json.loads(response.body).get("notices") or []
-
-
-def zip_name(info):
-    """Return a ZIP member's name. Without the UTF-8 flag, Python decodes it as CP437, but it can be UTF-8 or CP852."""
-    if info.flag_bits & 0x800:
-        return info.filename
-    raw = info.filename.encode("cp437")
-    try:
-        return raw.decode()
-    except UnicodeDecodeError:
-        return raw.decode("cp852")
-
-
-def smartpzp_update(response, component):
-    """Return the HTML that a JSF partial response renders for a component."""
-    match = re.search(
-        rf'<update id="{re.escape(component)}"><!\[CDATA\[(.*?)\]\]></update>',
-        response.text if response.status else "",
-        re.DOTALL,
-    )
-    return scrapy.Selector(text=f"<table><tbody>{match.group(1)}</tbody></table>" if match else "<table></table>")
-
-
-def write_json(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def write_bytes(path, body):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(body)
