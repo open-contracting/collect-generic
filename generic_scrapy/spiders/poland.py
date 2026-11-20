@@ -199,7 +199,8 @@ def _parse_announcement_html(html):
 
 def role(*names):
     """Return the document's role (swz, opz, ppu, annex, swz_change, qa, appeal, notice, notice_change or other)."""
-    text = " ".join(_norm(name).lower().replace("_", " ") for name in names if name).translate(FOLD)
+    text = " ".join(_norm(name).lower().replace("_", " ") for name in names if name)
+    text = unicodedata.normalize("NFC", text).translate(FOLD)
     return next((name for name, pattern in ROLES if pattern.search(text)), "other")
 
 
