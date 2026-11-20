@@ -1,8 +1,8 @@
-## Generic data collection
+# Collect Generic
 
-### Polish procurement spiders
+## Polish procurement spiders
 
-#### `poland`
+### `poland`
 
 Per-procedure file collector for `ezamowienia.gov.pl`. For each tender, writes:
 
@@ -12,7 +12,7 @@ Per-procedure file collector for `ezamowienia.gov.pl`. For each tender, writes:
 - `notices/<number>.{html,json}`: each notice's `Board/GetNoticeHtmlBody`, raw and parsed.
 - `attachments/<documentId>__<filename>`: each document that still has a file, from `Tender/DownloadDocument/{tenderId}/{documentId}`.
 
-Entry modes:
+#### Entry modes
 
 - By default, walks `Search/SearchTenders`, which only indexes procedures in state `Initiated`.
 - `-a from_date=2025-03-01 -a until_date=2025-03-31`: walks contract notices in `Board/Search` by publication date (both days included), which reaches closed procedures too. `from_date` defaults to 2021-01-01, when e-Zamówienia opened.
@@ -21,6 +21,8 @@ Both write under `data/poland/<crawl_directory>/<tenderId>/`, and skip tenders w
 
 - `-a notice_numbers=<csv>`: collects the tender documents of UZP controls, for `oecd-poland/analysis/poc/tender_document_requests.csv`. The CSV needs `control_id` and `notice_ids` (`; `-separated BZP, OJ S or eForms notice numbers, normalised as in `poland_uzp_wyniki_kontroli`). Optional `cn_split`, `art124_split` and `missing_identifier` columns set each control's priority group (`cn_test`, `art124_test`, `dev`, `art124_train`, `cn_aux`, assigned in that order), and `-a priority=cn_test,art124_test` selects groups. `-a sample=N` takes the first N controls in priority order.
 
+#### Notice resolution
+
 In the `notice_numbers` mode, each notice is resolved:
 
 - BZP notices via `Board/Search?NoticeNumber=…`. If the procedure isn't run on e-Zamówienia (`isProceedingOnPlatform: false`), the documents URL is read from the notice's *Adres strony internetowej prowadzonego postępowania*.
@@ -28,17 +30,37 @@ In the `notice_numbers` mode, each notice is resolved:
 
 A documents URL on `ezamowienia.gov.pl` gives the tender ID. The files go under `data/poland_tender_documents/<control_id>/<tenderId>/` (set `-a output=…` to use another directory under `data/`, like `poland_kio_tender_documents`).
 
+#### Platform adapters
+
 Platform adapters are opt-in, with `-a platforms=marketplanet,logintrade,eb2b,smartpzp`. Check a platform's terms of use and robots.txt before collecting from it. Open Nexus prohibits automated downloading from `platformazakupowa.pl` and has reserved its database against text and data mining (art. 8a of the database protection act), so there is no adapter for it.
 
-With `-a platforms=marketplanet`, a documents URL on a Marketplanet platform (`*.ezamawiajacy.pl`, `platformazakupowa.plk-sa.pl` or `zamowienia.*.lasy.gov.pl`) is either the procedure's page or the platform's home page, in which case the procedure is found by searching the notice lists linked from the home page (current, during and expired) for the notice's reference number (*Numer referencyjny*, or TED's `internal-identifier-proc`), and otherwise for its title, accepting only one procedure that started within 14 days of the notice. The spider saves the procedure page, its folders (like *Informacje o wynikach*) and every file in their files tables under `<control_id>/marketplanet-<id>/`, and takes the bid deadline from the page. A file's link expires a while after the page view, so the spider re-reads the pages and retries files that come back as an HTML page.
+Each adapter is a mixin in `generic_scrapy/poland/<platform>.py`. On every platform, the spider downloads key documents first, and skips annexes and other files over 100 MB. A response whose body is an HTML page (e.g. *Podany plik nie został znaleziony*) is recorded as an error and not saved, unless the file is named `.htm` or `.html`.
+
+Controls whose documents are on another platform, or on one of these without it in `-a platforms`, are `not_found` with `source` set to `platform:<host>`. Most documents URLs are the buyer's page on the platform, not the procedure's, and platforms can stop listing a procedure, or keep its files from the public.
+
+##### Marketplanet
+
+With `-a platforms=marketplanet`, a documents URL on a Marketplanet platform (`*.ezamawiajacy.pl`, `platformazakupowa.plk-sa.pl` or `zamowienia.*.lasy.gov.pl`) is either the procedure's page or the platform's home page, in which case the procedure is found by searching the notice lists linked from the home page (current, during and expired) for the notice's reference number (*Numer referencyjny*, or TED's `internal-identifier-proc`), and otherwise for its title, accepting only one procedure that started within 14 days of the notice. The spider saves the procedure page, its folders (like *Informacje o wynikach*) and every file in their files tables under `<control_id>/marketplanet-<id>/`, and takes the bid deadline from the page. A file's link expires a while after the page view, so the spider re-reads the pages and retries files that come back as an HTML page. Downloads aren't cached, for the same reason.
+
+A file's `state` is the files table's heading (e.g. *Pierwotne dokumenty zamówienia* or *Zmiana dokumentów zamówienia*), and replaced files aren't marked as superseded.
+
+##### Logintrade
 
 With `-a platforms=logintrade`, a documents URL on `*.logintrade.net` is either the procedure's page (`zapytania_email,<id>,<hash>.html`) or the buyer's page, in which case the procedure is found by searching the buyer's statutory procedures (`/rejestracja/ustawowe.html`) for the reference number. The spider saves the procedure page and its attachments under `<control_id>/logintrade-<id>/`, and takes the bid deadline from the page.
 
+Some buyers require a login for attachments, and some for every page, including the search (HTTP 401).
+
+##### eB2B
+
 With `-a platforms=eb2b`, a documents URL on `*.eb2b.com.pl` is either the procedure's page (`open-preview-auction.html/<id>`) or the buyer's page, in which case the procedure is found by filtering the buyer's public procedures (`/auction/auction/list`) on the reference number. The spider saves the procedure page and the attachments list (`/auction/auction/list-attachment`, as `attachments.json`), and downloads each attachment, under `<control_id>/eb2b-<id>/`. It takes the bid deadline from the procedure's data.
+
+A file's `state` is the attachment's type (e.g. *Załączniki organizatora*). The spider requests Polish pages, as some procedures' English pages are an error page. Buyers' public lists show only procedures in progress, and a bidder's account adds only its own procedures, so archived procedures need the buyer or the PPO.
+
+##### SmartPZP
 
 With `-a platforms=smartpzp`, a documents URL on `portal.smartpzp.pl` is either the procedure's page (`<buyer>/public/postepowanie?postepowanie=<id>`) or the buyer's page, in which case the procedure is found by searching the buyer's procedures, finished or not, for the reference number, and opening it from the results. The pages are JSF views, so each control has its own session. The spider saves the procedure page and lists the documents table (*Dokumentacja Postępowania*) page by page, then downloads the documents in archives of up to 20 files with distinct names (or one at a time, as some buyers' archives fail), under `<control_id>/smartpzp-<id>/`. It takes the bid deadline from the page.
 
-On every platform, the spider downloads key documents first, and skips annexes and other files over 100 MB.
+#### Output
 
 The spider also saves the procedure's notices published before the bid deadline: each TED notice's Polish PDF, under `<control_id>/ted/<publication number>.pdf`, and, for a procedure run on another platform, its BZP notice's `Board/GetNoticeHtmlBody`, under `<control_id>/notices/`. Notices don't count towards a control's `status`.
 
@@ -50,43 +72,43 @@ The crawl writes, in the output directory:
 
 When the crawl closes, its rows are merged into `manifest.json`: a row replaces the existing row for its control unless that row has a better status (or, with the same status, more files), or was collected manually. Delete a manual row to re-crawl its control.
 
+#### Running
+
 The spider collects 4 controls at a time, in priority order. To stop a crawl cleanly, send SIGUSR1 to the Scrapy process (not `uv`), like `kill -USR1 $(pgrep -f 'python.*scrapy crawl poland')`: the controls in progress finish, the others are skipped, and the crawl writes `coverage.json`. A re-run re-collects every control, but skips platform files already on disk.
 
 Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`. API responses aren't cached, so re-runs see new documents.
 
-Caveats:
+#### Caveats
 
 - e-Zamówienia deletes a procedure's files 3 months after it moves to *Zawarta umowa*, *Unieważnione*, *Anulowane* or *Rozstrzygnięte* (§8(12) of the platform's terms of use). Their documents stay in `documents.json` with state `DeletedAutomatically`, but the download returns HTTP 400 (*Brak załącznika dla wskazanego dokumentu*), so the spider doesn't request them. Files of procedures still in state `Initiated` are kept, however old.
-- Only Marketplanet, Logintrade, eB2B and SmartPZP have adapters. Controls whose documents are on another platform, or on one of these without it in `-a platforms`, are `not_found` with `source` set to `platform:<host>`. Most documents URLs are the buyer's page on the platform, not the procedure's.
-- On Marketplanet, a file's `state` is the files table's heading (e.g. *Pierwotne dokumenty zamówienia* or *Zmiana dokumentów zamówienia*), and replaced files aren't marked as superseded. Downloads aren't cached, because a file's link expires. On eB2B, it's the attachment's type (e.g. *Załączniki organizatora*), and the spider requests Polish pages, as some procedures' English pages are an error page. On every platform, a response whose body is an HTML page (e.g. *Podany plik nie został znaleziony*) is recorded as an error and not saved, unless the file is named `.htm` or `.html`.
-- Platforms can stop listing a procedure, or keep its files from the public. eB2B buyers' public lists show only procedures in progress, and a bidder's account adds only its own procedures, so archived procedures need the buyer or the PPO. Some Logintrade buyers require a login for attachments, and some for every page, including the search (HTTP 401).
 - e-Zamówienia's tender search lists only tenders in progress. A TED notice that links only to e-Zamówienia's home page can't be matched to a closed tender, so the control is `not_found` with `source` set to `platform:ezamowienia.gov.pl`.
 - `ted.europa.eu` can answer with an AWS WAF challenge (HTTP 202, empty body) instead of the notice XML, and the TED Search API with HTTP 429. Such controls are `unresolved`, with that reason. Re-run later.
 - `Board/Search` returns at most 10 results per page, and can time out (the spider retries). The date mode makes about 100 requests per day of notices.
 - `bid_deadline_final` comes from the e-Zamówienia tender's valid submission term or the platform's procedure page, when there is one, and otherwise from the TED notices.
 - Follow-up notices (award, agreement, performance) aren't collected. See [#40](https://github.com/open-contracting/collect-generic/issues/40).
 
-#### `poland_kio_orzeczenia`
+### `poland_kio_orzeczenia`
 
 Walks `/Home/Details/<id>` on `orzeczenia.uzp.gov.pl` and writes one row per ruling (both KIO appeals and KIO/KD control opinions). Discovers the upper ID bound by binary search at startup; pass `-a max_id=N` to skip the probe, and `-a min_id=N` to stop at an ID (e.g. the previous crawl's highest, to collect only new rulings). Keeps only rulings from 2023 onward by default (compared by year); pass `-a from_date=2016-01-01` to go further back.
 
-Caveats:
+#### Caveats
 
 - The `articles` field comes from the `Kluczowe przepisy ustawy Pzp` block — an editorial short list maintained by the search engine, not an exhaustive extraction of every article cited in the ruling's body. Use it for "which articles drive disputes", not "every mention".
 - The same KIO archive includes citations under both the current Pzp (2019, in force from 2021) and the prior Pzp 2004. Articles that exist in only one regime can show up with sub-clause combinations that look wrong in the other (e.g., `art. 16 ust. 1` makes sense in Pzp 2004 but not in Pzp 2019, where art. 16 has no `ust.`). The spider preserves these as-is.
 - Some older rulings (mostly pre-2015) have neither an `issue_date` in the metadata nor a `/YY` year suffix in the case number; those are dropped because their date cannot be determined.
+- `orzeczenia.uzp.gov.pl` has been observed to rate-limit large bursts (one run with `CONCURRENT_REQUESTS=32` against the full 34k ID range slowed to ~1 req/sec mid-crawl). If you hit it, throttle with `-s DOWNLOAD_DELAY=0.1 -s CONCURRENT_REQUESTS=8`.
 
-#### `poland_uzp_kontrole`
+### `poland_uzp_kontrole`
 
 Walks the 17 violation-category landing pages under `gov.pl/web/uzp/informacje-o-wynikach-…`. Writes one row per finding with title, violation summary (carrying inline PZP article references) and the attached PDF URLs.
 
-Caveats:
+#### Caveats
 
 - Scope is "postępowania wszczęte od 28.07.2016" only. The pre-2016 archive is a separate page not crawled by this spider.
 - Contracting-authority names in UZP findings are often anonymised, which limits joining findings back to specific named tenders.
 - No `from_date` filter — the full corpus is re-fetched on every run (it's small: ~400 records in seconds).
 
-#### `poland_uzp_wyniki_kontroli`
+### `poland_uzp_wyniki_kontroli`
 
 Collects every UZP control result PDF published on the year pages of [kontrole uprzednie](https://www.gov.pl/web/uzp/kontrole-uprzednie) (ex-ante, 2023 onward) and [kontrole doraźne](https://www.gov.pl/web/uzp/kontrole-od-2021-roku) (ad-hoc, 2021 onward), discovering the year pages from the parent pages' links. Unlike `poland_uzp_kontrole`, which crawls the anonymised findings by violation category, this crawls the full results per control.
 
@@ -104,13 +126,13 @@ Notice numbers are normalised as `YYYY/BZP NNNNNNNN/VV`, `YYYY/S NNN-NNNNNN`, `N
 
 Breached articles are read from the breach statement, which opens with *stwierdza naruszenie*, *stwierdzono naruszenie* or *informuje o stwierdzonym naruszeniu* and closes at *UZASADNIENIE* (or, in objections rulings, *Pismem z dnia* or *Zamawiający wniósł*). Articles 596–620 (the control provisions), articles of other statutes and regulations, and articles cited as references (*o którym mowa w*) are excluded, and ranges (`ust. 4-6`) are expanded.
 
-Spider arguments:
+#### Spider arguments
 
 - `-a ocr=true`: OCR the PDFs that have no usable text layer, with `tesseract -l pol` on 200 dpi page renders. [Tesseract](https://tesseract-ocr.github.io/) and its Polish language data must be installed (on macOS, `brew install tesseract tesseract-lang`). OCR text is cached under `.scrapy/data/poland_uzp_wyniki_kontroli/_ocrcache/`, so re-runs don't repeat it.
 
 PDFs are cached under `.scrapy/data/poland_uzp_wyniki_kontroli/_httpcache/`. The parent and year pages aren't cached, so new files are found on re-runs.
 
-Caveats:
+#### Caveats
 
 - About 15% of PDFs are scans, and a few more have a text layer in which every word with a Polish letter is missing (their fonts lack a Unicode map). Both are `text_status=empty` without `-a ocr=true`, and their fields are empty.
 - For some ad-hoc controls, only the objections ruling is published, so the header fields are empty.
@@ -118,7 +140,7 @@ Caveats:
 - The parsing is regular expressions over flattened text. OCR errors and unusual layouts can leave fields empty or wrong. A few breaches have no `breached_articles`, because the statement opens unusually (*dopuścił się naruszenia*) or its list is missing from the text layer.
 - Value labels are read from the text around each figure, so check `value_figures` before relying on `whole_value_*`. Where the header is laid out in columns, the labels are separated from their figures, and the labels in `value_figures` can be empty or wrong.
 
-#### `poland_cpv`
+### `poland_cpv`
 
 Joins KIO rulings and UZP findings to their procurement CPV codes. For each record produced by `poland_kio_orzeczenia` and `poland_uzp_kontrole`, downloads the associated PDF, extracts the first 20 pages with PyMuPDF, regexes out BZP / TED notice numbers, and looks each up:
 
@@ -129,26 +151,22 @@ Writes one JSONL row per (source, record_id, notice) under `data/poland_cpv/<cra
 
 PDF and lookup responses are cached under `.scrapy/data/poland_cpv/_httpcache/` (Scrapy resolves a relative `HTTPCACHE_DIR` against the project's `.scrapy` directory), so re-runs after regex / extraction tweaks don't re-hit the servers.
 
-Spider arguments:
+#### Spider arguments
 
 - `-a articles=99.1,99.4,433,436`: only process KIO rulings that cite these articles. `N.U` matches art. N ust. U (any pkt); a bare `N` matches art. N (any ust., any pkt).
 - `-a kio_crawl=…` / `-a uzp_crawl=…`: read a specific `crawl_directory` instead of the latest.
 
 PyMuPDF is AGPL-3.0 licensed (the only AGPL dep in this stack). Combining this repo with PyMuPDF means the combined work effectively has to comply with AGPL terms (source disclosure including for network-deployed modified versions). Chosen here for re-processing speed — PyMuPDF extracts the first 20 pages in ~80 ms vs ~3 s for pdfminer, which matters once the PDFs are cached and we're iterating on the regex / extraction logic.
 
-Caveats:
+#### Caveats
 
 - Many KIO rulings are procedural ("umorzenie postępowania") and don't cite the notice in the PDF text at all; the spider records these with `pdf_status=no_notice`.
 - Some KIO/UZP PDFs are scanned images — text extraction returns empty, surfaced as `pdf_status=empty`. OCR is out of scope.
 - TED's current Search API does not reliably index pre-migration (~pre-2019) notices, so older TED references show up as `lookup_hit=false`. About half our UZP TED references are in that older range.
 - UZP findings are partly anonymised and the notice number may be redacted in the published "Informacja o wyniku kontroli" PDF.
+- A full run is slow: PDF parsing in the Scrapy event loop is sequential, so ~10k records take several hours. The HTTP cache means re-runs after that are fast.
 
-#### Operational notes
-
-- `orzeczenia.uzp.gov.pl` has been observed to rate-limit large bursts (one run with `CONCURRENT_REQUESTS=32` against the full 34k ID range slowed to ~1 req/sec mid-crawl). If you hit it, throttle with `-s DOWNLOAD_DELAY=0.1 -s CONCURRENT_REQUESTS=8`.
-- A full `poland_cpv` run is the slowest piece — PDF parsing in the Scrapy event loop is sequential, so ~10k records take several hours. The HTTP cache means re-runs after that are fast.
-
-### `polandpzp` command
+## `polandpzp` command
 
 Aggregates PZP-article distributions from the latest `poland_kio_orzeczenia` and `poland_uzp_kontrole` crawls under `FILES_STORE`. Writes `pzp_article_counts.csv`, `pzp_subclause_counts.csv` and `uzp_category_breakdown.csv` to the cwd or `--output-dir`. When a `poland_cpv` crawl is also present, additionally writes `cpv_counts.csv` and `cpv_division_by_dimension.csv` (cross-tab of CPV division × OPZ-quality dimension with three "simple-subset" filtered rows for divs 48/72/33).
 
