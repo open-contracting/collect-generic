@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-20"
+__generated_at__ = "2026-11-21"
 
 import html
 import io
@@ -71,6 +71,11 @@ class TEDMixin:
             if isinstance(procedure_notices, list) and procedure_notices:
                 # Some buyers reuse a procedure identifier across procedures.
                 notices = [n for n in procedure_notices if same_procedure(notice, n)] or notices
+        elif reference := ojs_reference(notice):
+            # Pre-eForms corrigenda have no procedure identifier, but cite the notice's OJ S number.
+            corrigenda = await self.ted_search(f'notice-type=corr AND FT~"{reference}"')
+            if isinstance(corrigenda, list):
+                notices = [notice, *corrigenda]
         # Later notices can correct the reference number.
         latest = max(
             (n for n in notices if n.get("internal-identifier-proc") and n.get("notice-type", "").startswith("cn")),
@@ -79,7 +84,12 @@ class TEDMixin:
         )
         result = {
             "ted_notices": notices,
-            "deadline": self.ted_procedure_deadline(notice, notices),
+            "original_deadline": self.ted_deadline(notice),
+            "deadline": (
+                self.ted_procedure_deadline(notice, notices)
+                if notice.get("procedure-identifier")
+                else self.ted_corrigendum_deadline(notices)
+            ),
             # Fall back to the lots' identifiers, which some buyers use as the procedure's.
             "references": (
                 reference_numbers(latest["internal-identifier-proc"])
@@ -166,6 +176,12 @@ class TEDMixin:
             deadline = cls.ted_deadline(other) or deadline
         return deadline
 
+    @classmethod
+    def ted_corrigendum_deadline(cls, notices):
+        """Return the bid deadline of the latest of the notice and its corrigenda to set one."""
+        latest = max(filter(cls.ted_deadline, notices), key=lambda n: n.get("publication-date") or "", default=None)
+        return cls.ted_deadline(latest) if latest else None
+
     def ted_documents(self, notices):
         documents = []
         contract_notices = 0
@@ -173,6 +189,8 @@ class TEDMixin:
             if (notice.get("notice-type") or "").startswith("cn"):
                 notice_role = "notice_change" if contract_notices else "notice"
                 contract_notices += 1
+            elif notice.get("notice-type") == "corr":
+                notice_role = "notice_change"
             else:
                 notice_role = "other"
             documents.append(
@@ -225,6 +243,15 @@ def ted_publication_number(notice):
         return f"{int(match.group(2))}-{match.group(1)}"
     if TED_EFORMS_RE.match(notice):
         return notice
+    return None
+
+
+def ojs_reference(notice):
+    """Return a pre-eForms notice's OJ S number (``YYYY/S NNN-NNNNNN``), or None."""
+    issue, _, year = (notice.get("ojs-number") or "").partition("/")
+    number = notice["publication-number"].partition("-")[0]
+    if issue.isdigit() and number.isdigit():
+        return f"{year}/S {int(issue):03d}-{int(number):06d}"
     return None
 
 

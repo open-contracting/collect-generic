@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-20"
+__generated_at__ = "2026-11-21"
 
 import asyncio
 import collections
@@ -239,7 +239,8 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
         tender_ids = list(dict.fromkeys(r["tender_id"] for r in resolutions if r.get("tender_id")))
         ted_notices = {n["publication-number"]: n for r in resolutions for n in r.get("ted_notices", [])}
         deadlines = sorted(filter(None, (r.get("deadline") for r in resolutions)))
-        row["bid_deadline_original"] = deadlines[0].isoformat() if deadlines else None
+        originals = sorted(filter(None, (r.get("original_deadline") or r.get("deadline") for r in resolutions)))
+        row["bid_deadline_original"] = originals[0].isoformat() if originals else None
 
         for tender_id in tender_ids:
             tender, documents = await self.collect_tender(tender_id, directory / tender_id)
@@ -273,7 +274,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             notices.extend(self.bzp_documents(resolutions, directory))
         row["documents"].extend(notices)
         if not row["bid_deadline_final"]:
-            # Pre-eForms corrigenda aren't linked to their notice, so a later document can show a later deadline.
+            # A buyer can extend the deadline without a TED notice, so a later document can show a later deadline.
             notice_deadline = deadlines[-1] if deadlines else parse_datetime(row["bid_deadline_original"])
             if notice_deadline and not any(extends(d, notice_deadline) for d in row["documents"]):
                 row["bid_deadline_final"] = notice_deadline.isoformat()
