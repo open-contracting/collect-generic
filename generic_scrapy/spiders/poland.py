@@ -31,6 +31,8 @@ OPENING_RE = re.compile(r"otwarci|kwo[tc]|zestawieni\w* ofert|art\.? ?222")
 MINOR_ROLES = {"annex", "other"}
 # Larger annexes are usually design documentation, not the SWZ, OPZ or contract terms.
 MAX_MINOR_FILE_SIZE = 100 * 1024 * 1024
+# Some OPZ archives are several hundred MB.
+MAX_KEY_FILE_SIZE = 2 * 1024 * 1024 * 1024
 # Controls collected at a time, in priority order. They share the per-domain download slots.
 CONCURRENT_CONTROLS = 8
 PRIORITY_GROUPS = [
@@ -386,6 +388,8 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                     continue
                 # Some files are hundreds of MB, and platforms can send them slowly.
                 request.meta.update({"download_timeout": 1800, "max_retry_times": 1})
+                if entry["role"] not in MINOR_ROLES:
+                    request.meta["download_maxsize"] = MAX_KEY_FILE_SIZE
                 response = await self.fetch_file(request)
                 if response.status != HTTPStatus.OK:
                     entry["error"] = f"HTTP {response.status}"
