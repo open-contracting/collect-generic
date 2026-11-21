@@ -3,6 +3,8 @@ __generated_by__ = "claude-code/claude-opus-5-5"
 __generated_at__ = "2026-11-19"
 
 import datetime as dt
+import html
+import json
 import re
 import unicodedata
 import zoneinfo
@@ -10,6 +12,12 @@ from urllib.parse import urlparse
 
 HTML_PAGE_ERROR = "HTML page instead of the file"
 UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+TENDER_ID_RE = re.compile(r"ocds-148610-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+# Hosts misspelled in notices' documents URLs.
+HOST_TYPOS = {
+    "platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl",
+    "www.platformazakupowa-plk-sa.pl": "platformazakupowa.plk-sa.pl",
+}
 WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 
 # Some platforms drop or transliterate Polish letters in filenames, so roles are matched without them.
@@ -99,3 +107,21 @@ def parse_datetime(value):
 def write_bytes(path, body):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(body)
+
+
+def normalize_url(url):
+    """Unescape HTML entities and correct misspelled hosts in a notice's documents URL."""
+    url = html.unescape(url)
+    for typo, correct in HOST_TYPOS.items():
+        url = re.sub(rf"^(?:https?://)?{re.escape(typo)}", f"https://{correct}", url)
+    return url
+
+
+def reference_numbers(text):
+    """Split a reference like "nr z Platformy: 9090/IREZA3/02597/01189/23/P; nr sprawy: PZ.292.436.2023"."""
+    return [number for part in text.split(";") if (number := part.rsplit(":", 1)[-1].strip())]
+
+
+def write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
