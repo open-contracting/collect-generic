@@ -15,7 +15,7 @@ from pathlib import Path
 import scrapy
 
 from generic_scrapy.base_spiders.base_spider import BaseSpider
-from generic_scrapy.poland.common import HTML_PAGE_ERROR, TENDER_ID_RE, host, parse_datetime, write_bytes
+from generic_scrapy.poland.common import HTML_PAGE_ERROR, HTML_RE, TENDER_ID_RE, host, parse_datetime, write_bytes
 from generic_scrapy.poland.eb2b import EB2B_HOSTS, EB2B_LIMIT_ERROR, EB2B_LIMIT_RE, EB2B_SLOT, EB2BMixin
 from generic_scrapy.poland.ezamowienia import DELETED_AUTOMATICALLY, EZamowieniaMixin
 from generic_scrapy.poland.logintrade import LogintradeMixin
@@ -23,7 +23,6 @@ from generic_scrapy.poland.marketplanet import MARKETPLANET_HOSTS, MarketplanetM
 from generic_scrapy.poland.smartpzp import SMARTPZP_SLOT, SmartPZPMixin
 from generic_scrapy.poland.ted import TEDMixin, ted_publication_number
 
-HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
 JSON_ERROR_RE = re.compile(rb'\s*\{\s*"success"\s*:\s*false\b')
 # Documents published after the bid deadline, or on its day for the opening.
 POST_DEADLINE_RE = re.compile(r"wyb[oó]r|wynik|udzieleni|uniewa|cofni|\(can-|\(veat")
@@ -113,6 +112,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
         "DOWNLOAD_DELAY": 0.5,
         # The TED Search API answers bursts with HTTP 429, and ted.europa.eu with a WAF challenge. TED's fair usage
         # policy allows 700 requests a minute, and 600 notice views or downloads in 6 minutes.
+        # https://ted.europa.eu/en/fair-usage-policy-on-ted
         "DOWNLOAD_SLOTS": {
             "api.ted.europa.eu": {"concurrency": 1, "delay": 1},
             "ted.europa.eu": {"concurrency": 1, "delay": 2},

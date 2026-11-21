@@ -11,6 +11,7 @@ import zoneinfo
 from urllib.parse import urlparse
 
 HTML_PAGE_ERROR = "HTML page instead of the file"
+HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
 UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 TENDER_ID_RE = re.compile(r"ocds-148610-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 # Hosts misspelled in notices' documents URLs.

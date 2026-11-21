@@ -12,6 +12,8 @@ from urllib.parse import quote, urlencode
 import scrapy
 
 from generic_scrapy.poland.common import (
+    HTML_PAGE_ERROR,
+    HTML_RE,
     UNSAFE_FILENAME_RE,
     compact,
     node_text,
@@ -222,14 +224,16 @@ class EZamowieniaMixin:
                 response = await self.fetch(
                     self.DOWNLOAD_URL.format(tender_id=tender_id, doc_id=document["objectId"]), cache=True
                 )
-                if response.status == HTTPStatus.OK:
-                    path = Path(
-                        "attachments", UNSAFE_FILENAME_RE.sub("_", f"{document['objectId']}__{document['fileName']}")
-                    )
+                path = Path(
+                    "attachments", UNSAFE_FILENAME_RE.sub("_", f"{document['objectId']}__{document['fileName']}")
+                )
+                if response.status != HTTPStatus.OK:
+                    entry["error"] = f"HTTP {response.status}"
+                elif HTML_RE.match(response.body[:512]) and not path.suffix.lower().startswith(".htm"):
+                    entry["error"] = HTML_PAGE_ERROR
+                else:
                     write_bytes(directory / path, response.body)
                     entry["path"] = str(path)
-                else:
-                    entry["error"] = f"HTTP {response.status}"
             elif document.get("url"):
                 entry["error"] = "link to another site, not followed"
             entries.append(entry)
