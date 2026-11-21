@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-19"
+__generated_at__ = "2026-11-21"
 
 import re
 from http import HTTPStatus
@@ -35,7 +35,7 @@ MARKETPLANET_START_DAYS = 14
 MARKETPLANET_QUERY_LENGTH = 60
 MARKETPLANET_TITLE_MATCH = 30
 # Marketplanet hosts its own platform (ezamawiajacy.pl) and buyers' white-label platforms.
-MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl")
+MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl", "zamowienia.um.warszawa.pl")
 
 
 class MarketplanetMixin:

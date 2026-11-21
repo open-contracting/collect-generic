@@ -16,7 +16,7 @@ import scrapy
 
 from generic_scrapy.base_spiders.base_spider import BaseSpider
 from generic_scrapy.poland.common import HTML_PAGE_ERROR, TENDER_ID_RE, host, parse_datetime, write_bytes
-from generic_scrapy.poland.eb2b import EB2B_LIMIT_ERROR, EB2B_LIMIT_RE, EB2B_SLOT, EB2BMixin
+from generic_scrapy.poland.eb2b import EB2B_HOSTS, EB2B_LIMIT_ERROR, EB2B_LIMIT_RE, EB2B_SLOT, EB2BMixin
 from generic_scrapy.poland.ezamowienia import DELETED_AUTOMATICALLY, EZamowieniaMixin
 from generic_scrapy.poland.logintrade import LogintradeMixin
 from generic_scrapy.poland.marketplanet import MARKETPLANET_HOSTS, MarketplanetMixin
@@ -261,7 +261,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
         elif not tender_ids and urls and "logintrade" in self.platforms and host(urls[0]).endswith("logintrade.net"):
             other_urls = [u for r in resolutions for u in r.get("other_urls", [])]
             platform = await self.collect_logintrade(urls[0], references, directory, other_urls)
-        elif not tender_ids and urls and "eb2b" in self.platforms and host(urls[0]).endswith("eb2b.com.pl"):
+        elif not tender_ids and urls and "eb2b" in self.platforms and host(urls[0]).endswith(EB2B_HOSTS):
             platform = await self.collect_eb2b(urls[0], references, directory)
         elif not tender_ids and urls and "smartpzp" in self.platforms and host(urls[0]) == SMARTPZP_SLOT:
             platform = await self.collect_smartpzp(urls[0], references, directory)
