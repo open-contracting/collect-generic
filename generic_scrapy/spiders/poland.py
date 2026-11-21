@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-19"
+__generated_at__ = "2026-11-20"
 
 import asyncio
 import collections
@@ -25,6 +25,9 @@ from generic_scrapy.poland.ted import TEDMixin, ted_publication_number
 
 HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
 JSON_ERROR_RE = re.compile(rb'\s*\{\s*"success"\s*:\s*false\b')
+# Documents published after the bid deadline, or on its day for the opening.
+POST_DEADLINE_RE = re.compile(r"wyb[oó]r|wynik|udzieleni|uniewa|cofni|\(can-|\(veat")
+OPENING_RE = re.compile(r"otwarci|kwo[tc]|zestawieni\w* ofert|art\.? ?222")
 # Platform files that aren't key documents, downloaded last and only up to MAX_MINOR_FILE_SIZE.
 MINOR_ROLES = {"annex", "other"}
 # Larger annexes are usually design documentation, not the SWZ, OPZ or contract terms.
@@ -46,6 +49,17 @@ def first_appeal_at(documents):
     """Return when the first appeal document was published, after which documents can reveal the appeal's grounds."""
     dates = [date for d in documents if d.get("role") == "appeal" and (date := parse_datetime(d.get("published_at")))]
     return min(dates).isoformat() if dates else None
+
+
+def extends(document, deadline):
+    """Return whether the document, published after the deadline, shows that the deadline was extended."""
+    published = parse_datetime(document.get("published_at"))
+    if not published or published <= deadline or document.get("role") == "appeal":
+        return False
+    text = f"{document.get('title') or ''} {document.get('file_name') or ''}".lower().replace("_", " ")
+    if POST_DEADLINE_RE.search(text):
+        return False
+    return not (OPENING_RE.search(text) and published.date() == deadline.date())
 
 
 def replaces(row, previous):
@@ -258,9 +272,11 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
         if not tender_ids:
             notices.extend(self.bzp_documents(resolutions, directory))
         row["documents"].extend(notices)
-        if not row["bid_deadline_final"] and len(deadlines) > 1:
-            row["bid_deadline_final"] = deadlines[-1].isoformat()
-        row["bid_deadline_final"] = row["bid_deadline_final"] or row["bid_deadline_original"]
+        if not row["bid_deadline_final"]:
+            # Pre-eForms corrigenda aren't linked to their notice, so a later document can show a later deadline.
+            notice_deadline = deadlines[-1] if deadlines else parse_datetime(row["bid_deadline_original"])
+            if notice_deadline and not any(extends(d, notice_deadline) for d in row["documents"]):
+                row["bid_deadline_final"] = notice_deadline.isoformat()
 
         if final := parse_datetime(row["bid_deadline_final"]):
             for document in row["documents"]:
