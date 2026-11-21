@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-19"
+__generated_at__ = "2026-11-20"
 
 import html
 import io
@@ -42,6 +42,7 @@ TED_FIELDS = [
     "internal-identifier-lot",
     "deadline-receipt-tender-date-lot",
     "deadline-receipt-tender-time-lot",
+    "deadline-receipt-request",
     "ojs-number",
     "buyer-name",
     "title-proc",
@@ -147,7 +148,9 @@ class TEDMixin:
             parse_datetime(f"{date[:10]}T{times[i]}" if i < len(times) and times[i] else date)
             for i, date in enumerate(notice.get("deadline-receipt-tender-date-lot") or [])
         ]
-        return max(filter(None, deadlines), default=None)
+        # Pre-eForms notices have one deadline, for tenders or requests to participate, as "deadline-receipt-request".
+        requests = map(parse_datetime, notice.get("deadline-receipt-request") or [])
+        return max(filter(None, deadlines), default=None) or max(filter(None, requests), default=None)
 
     @classmethod
     def ted_procedure_deadline(cls, notice, notices):
