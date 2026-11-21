@@ -15,7 +15,7 @@ from pathlib import Path
 import scrapy
 
 from generic_scrapy.base_spiders.base_spider import BaseSpider
-from generic_scrapy.poland.common import HTML_PAGE_ERROR, host, parse_datetime, write_bytes
+from generic_scrapy.poland.common import HTML_PAGE_ERROR, TENDER_ID_RE, host, parse_datetime, write_bytes
 from generic_scrapy.poland.eb2b import EB2B_LIMIT_ERROR, EB2B_LIMIT_RE, EB2B_SLOT, EB2BMixin
 from generic_scrapy.poland.ezamowienia import DELETED_AUTOMATICALLY, EZamowieniaMixin
 from generic_scrapy.poland.logintrade import LogintradeMixin
@@ -86,8 +86,8 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
     - Default: walks the SearchTenders catalogue (``Initiated`` tenders only).
     - ``-a from_date=YYYY-MM-DD -a until_date=YYYY-MM-DD``: walks contract notices in Board/Search by publication
       date, both days included, which reaches closed tenders too.
-    - ``-a notice_numbers=<csv>``: resolves each control's BZP or TED notices to its procedure, for the oecd-poland
-      control analysis. ``-a priority=cn_test,art124_test`` selects priority groups.
+    - ``-a notice_numbers=<csv>``: resolves each control's BZP or TED notices (or tender IDs or documents URLs) to its
+      procedure, for the oecd-poland control analysis. ``-a priority=cn_test,art124_test`` selects priority groups.
 
     For each tender, writes:
       - tender.json         — Search/GetTender response
@@ -327,6 +327,11 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             return await self.resolve_ted(publication_number)
         if "/BZP " in notice:
             return await self.resolve_bzp(notice)
+        # A tender ID or documents URL, for a procedure that its notices don't lead to.
+        if TENDER_ID_RE.fullmatch(notice):
+            return {"tender_id": notice}
+        if notice.startswith("https://"):
+            return {"urls": [notice]}
         return {"error": f"{notice}: unsupported notice number"}
 
     def closed(self, _reason):
