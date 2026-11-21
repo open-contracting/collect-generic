@@ -84,7 +84,7 @@ Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`
 - e-Zamówienia's tender search lists only tenders in progress. A TED notice that links only to e-Zamówienia's home page can't be matched to a closed tender, so the control is `not_found` with `source` set to `platform:ezamowienia.gov.pl`.
 - `ted.europa.eu` can answer with an AWS WAF challenge (HTTP 202, empty body) instead of the notice XML, and the TED Search API with HTTP 429. Such controls are `unresolved`, with that reason. Re-run later.
 - `Board/Search` returns at most 10 results per page, and can time out (the spider retries). The date mode makes about 100 requests per day of notices.
-- `bid_deadline_final` comes from the e-Zamówienia tender's valid submission term or the platform's procedure page, when there is one, and otherwise from the TED notices.
+- `bid_deadline_final` comes from the e-Zamówienia tender's valid submission term or the platform's procedure page, when there is one, and otherwise from the TED notices. Pre-eForms corrigenda aren't linked to their contract notice, so if a document published after the notice's deadline (other than an opening, award or appeal document) shows that it was extended, `bid_deadline_final` is empty.
 - Follow-up notices (award, agreement, performance) aren't collected. See [#40](https://github.com/open-contracting/collect-generic/issues/40).
 
 ### `poland_kio_orzeczenia`
