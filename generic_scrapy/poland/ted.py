@@ -45,6 +45,7 @@ TED_FIELDS = [
     "deadline-receipt-request",
     "ojs-number",
     "buyer-name",
+    "buyer-country",
     "title-proc",
     *TED_URL_FIELDS,
 ]
@@ -66,6 +67,9 @@ class TEDMixin:
         if not notices:
             return {"error": f"{publication_number}: not found in TED"}
         notice = notices[0]
+        buyers = ted_buyers(notice)
+        if "POL" not in (notice.get("buyer-country") or ["POL"]):
+            return {"error": f"{publication_number}: not a Polish buyer's notice ({'; '.join(buyers)})"}
         if procedure := notice.get("procedure-identifier"):
             procedure_notices = await self.ted_search(f'procedure-identifier="{procedure}"')
             if isinstance(procedure_notices, list) and procedure_notices:
@@ -83,6 +87,7 @@ class TEDMixin:
             default=notice,
         )
         result = {
+            "buyers": buyers,
             "ted_notices": notices,
             "original_deadline": self.ted_deadline(notice),
             "deadline": (
@@ -244,6 +249,11 @@ def ted_publication_number(notice):
     if TED_EFORMS_RE.match(notice):
         return notice
     return None
+
+
+def ted_buyers(notice):
+    names = (notice.get("buyer-name") or {}).values()
+    return list(dict.fromkeys(name for value in names for name in ([value] if isinstance(value, str) else value)))
 
 
 def ojs_reference(notice):

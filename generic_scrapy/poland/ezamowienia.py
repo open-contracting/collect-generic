@@ -112,7 +112,10 @@ class EZamowieniaMixin:
                 "error": f"{notice}: single-source award (notice of intention to conclude a contract), "
                 "so no tender documents"
             }
-        result = {"deadline": parse_datetime(hit.get("submittingOffersDate"))}
+        result = {
+            "buyers": [hit["organizationName"]] if hit.get("organizationName") else [],
+            "deadline": parse_datetime(hit.get("submittingOffersDate")),
+        }
         if hit.get("tenderId"):
             tender = await self.get_json(self.TENDER_URL.format(id=hit["tenderId"]))
             if isinstance(tender, dict) and tender.get("isProceedingOnPlatform"):

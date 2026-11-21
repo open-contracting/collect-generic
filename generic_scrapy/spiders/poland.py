@@ -15,7 +15,15 @@ from pathlib import Path
 import scrapy
 
 from generic_scrapy.base_spiders.base_spider import BaseSpider
-from generic_scrapy.poland.common import HTML_PAGE_ERROR, HTML_RE, TENDER_ID_RE, host, parse_datetime, write_bytes
+from generic_scrapy.poland.common import (
+    HTML_PAGE_ERROR,
+    HTML_RE,
+    TENDER_ID_RE,
+    host,
+    parse_datetime,
+    same_buyer,
+    write_bytes,
+)
 from generic_scrapy.poland.eb2b import EB2B_HOSTS, EB2B_LIMIT_ERROR, EB2B_LIMIT_RE, EB2B_SLOT, EB2BMixin
 from generic_scrapy.poland.ezamowienia import DELETED_AUTOMATICALLY, EZamowieniaMixin
 from generic_scrapy.poland.logintrade import LogintradeMixin
@@ -70,6 +78,18 @@ def replaces(row, previous):
     if previous.get("collection") == "manual":
         return False
     return quality(row) >= quality(previous)
+
+
+def different_buyers(control, resolutions):
+    """Return why the control's notices aren't one buyer's (or the input's ``buyer``'s), or None."""
+    named = [
+        (notice, r["buyers"]) for notice, r in zip(control["notices"], resolutions, strict=True) if r.get("buyers")
+    ]
+    if control["buyer"]:
+        named.insert(0, ("input", [control["buyer"]]))
+    if all(same_buyer(named[0][1], buyers) for _, buyers in named[1:]):
+        return None
+    return "notices from different buyers: " + "; ".join(f"{'; '.join(b)} ({notice})" for notice, b in named)
 
 
 def quality(row):
@@ -190,7 +210,13 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             if self.priority and group not in self.priority:
                 continue
             notices = [notice for notice in row["notice_ids"].split("; ") if notice]
-            control = {"control_id": row["control_id"], "group": group, "kind": row.get("kind"), "notices": notices}
+            control = {
+                "control_id": row["control_id"],
+                "group": group,
+                "kind": row.get("kind"),
+                "notices": notices,
+                "buyer": row.get("buyer"),
+            }
             if not notices or row.get("missing_identifier") == "yes":
                 self.skipped.append(control)
             else:
@@ -239,6 +265,10 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             "crawl": self.crawl_directory,
         }
         resolutions = [await self.resolve(notice) for notice in control["notices"]]
+        if reason := different_buyers(control, resolutions):
+            row["reason"] = reason
+            self.log_row(row)
+            return
         tender_ids = list(dict.fromkeys(r["tender_id"] for r in resolutions if r.get("tender_id")))
         ted_notices = {n["publication-number"]: n for r in resolutions for n in r.get("ted_notices", [])}
         deadlines = sorted(filter(None, (r.get("deadline") for r in resolutions)))
@@ -320,6 +350,9 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                 None if len(saved) == len(files) else f"{len(files) - len(saved)} of {len(files)} files unavailable"
             )
 
+        self.log_row(row)
+
+    def log_row(self, row):
         self.manifest.append(row)
         self.manifest_file.write(json.dumps(row, ensure_ascii=False) + "\n")
         self.manifest_file.flush()

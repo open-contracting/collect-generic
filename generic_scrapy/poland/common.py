@@ -20,6 +20,7 @@ HOST_TYPOS = {
     "www.platformazakupowa-plk-sa.pl": "platformazakupowa.plk-sa.pl",
 }
 WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
+BUYER_STOPWORDS = {"spolka", "ograniczona", "odpowiedzialnoscia", "akcyjna", "the"}
 
 # Some platforms drop or transliterate Polish letters in filenames, so roles are matched without them.
 FOLD = str.maketrans("ąćęłńóśźż", "acelnoszz")
@@ -103,6 +104,22 @@ def parse_datetime(value):
     if re.match(r"\d{4}-\d{2}-\d{2}[+-]", value):
         value = f"{value[:10]}T23:59:59{value[10:]}"
     return dt.datetime.fromisoformat(value)
+
+
+def same_buyer(names, others):
+    """Return whether any buyer name shares two words, or all of the shorter name's words, with any other name."""
+    for name in names:
+        for other in others:
+            a, b = buyer_words(name), buyer_words(other)
+            if a and b and len(a & b) >= min(2, len(a), len(b)):
+                return True
+    return False
+
+
+def buyer_words(name):
+    # Five-letter prefixes match inflected forms, like "Ostrołęka" and "w Ostrołęce".
+    text = unicodedata.normalize("NFC", html.unescape(name or "")).lower().translate(FOLD)
+    return {word[:5] for word in re.findall(r"\w{3,}", text) if word not in BUYER_STOPWORDS}
 
 
 def write_bytes(path, body):

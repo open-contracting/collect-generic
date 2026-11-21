@@ -19,7 +19,7 @@ Per-procedure file collector for `ezamowienia.gov.pl`. For each tender, writes:
 
 Both write under `data/poland/<crawl_directory>/<tenderId>/`, and skip tenders whose `tender.json` is already on disk.
 
-- `-a notice_numbers=<csv>`: collects the tender documents of UZP controls, for `oecd-poland/analysis/poc/tender_document_requests.csv`. The CSV needs `control_id` and `notice_ids` (`; `-separated BZP, OJ S or eForms notice numbers, normalised as in `poland_uzp_wyniki_kontroli`). Optional `cn_split`, `art124_split` and `missing_identifier` columns set each control's priority group (`cn_test`, `art124_test`, `dev`, `art124_train`, `cn_aux`, assigned in that order), and `-a priority=cn_test,art124_test` selects groups. `-a sample=N` takes the first N controls in priority order.
+- `-a notice_numbers=<csv>`: collects the tender documents of UZP controls, for `oecd-poland/analysis/poc/tender_document_requests.csv`. The CSV needs `control_id` and `notice_ids` (`; `-separated BZP, OJ S or eForms notice numbers, normalised as in `poland_uzp_wyniki_kontroli`). Optional `cn_split`, `art124_split` and `missing_identifier` columns set each control's priority group (`cn_test`, `art124_test`, `dev`, `art124_train`, `cn_aux`, assigned in that order), and `-a priority=cn_test,art124_test` selects groups. An optional `buyer` column names the procedure's buyer. A control isn't collected if its notices' buyers (or the `buyer`) differ, as when a notice number is taken from a document that cites another procedure; TED notices from buyers outside Poland are ignored. `-a sample=N` takes the first N controls in priority order.
 
 #### Notice resolution
 
