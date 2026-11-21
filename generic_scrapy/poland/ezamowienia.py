@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-19"
+__generated_at__ = "2026-11-21"
 
 import datetime as dt
 import json
@@ -216,7 +216,9 @@ class EZamowieniaMixin:
                 "state": document.get("tenderDocumentState"),
                 "delete_reason": document.get("deleteReason"),
             }
-            if document.get("fileName") and document.get("tenderDocumentState") != DELETED_AUTOMATICALLY:
+            if document.get("tenderDocumentState") == DELETED_AUTOMATICALLY:
+                entry["error"] = "deleted automatically"
+            elif document.get("fileName"):
                 response = await self.fetch(
                     self.DOWNLOAD_URL.format(tender_id=tender_id, doc_id=document["objectId"]), cache=True
                 )
