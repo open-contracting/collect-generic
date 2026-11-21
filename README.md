@@ -75,7 +75,7 @@ When the crawl closes, its rows are merged into `manifest.json`: a row replaces 
 
 #### Running
 
-The spider collects 4 controls at a time, in priority order. To stop a crawl cleanly, send SIGUSR1 to the Scrapy process (not `uv`), like `kill -USR1 $(pgrep -f 'python.*scrapy crawl poland')`: the controls in progress finish, the others are skipped, and the crawl writes `coverage.json`. A re-run re-collects every control, but skips platform files already on disk.
+The spider collects 8 controls at a time, in priority order, and a control waiting out eB2B's download limit lets another start. To stop a crawl cleanly, send SIGUSR1 to the Scrapy process (not `uv`), like `kill -USR1 $(pgrep -f 'python.*scrapy crawl poland')`: the controls in progress finish, the others are skipped, and the crawl writes `coverage.json`. A re-run re-collects every control, but skips platform files already on disk.
 
 Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`. API responses aren't cached, so re-runs see new documents.
 

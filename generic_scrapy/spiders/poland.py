@@ -33,7 +33,7 @@ MINOR_ROLES = {"annex", "other"}
 # Larger annexes are usually design documentation, not the SWZ, OPZ or contract terms.
 MAX_MINOR_FILE_SIZE = 100 * 1024 * 1024
 # Controls collected at a time, in priority order. They share the per-domain download slots.
-CONCURRENT_CONTROLS = 4
+CONCURRENT_CONTROLS = 8
 PRIORITY_GROUPS = [
     ("cn_test", lambda row: row.get("cn_split") == "test"),
     ("art124_test", lambda row: row.get("art124_split") == "test"),
@@ -111,10 +111,11 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
     custom_settings = {
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
         "DOWNLOAD_DELAY": 0.5,
-        # The TED Search API answers bursts with HTTP 429, and ted.europa.eu with a WAF challenge.
+        # The TED Search API answers bursts with HTTP 429, and ted.europa.eu with a WAF challenge. TED's fair usage
+        # policy allows 700 requests a minute, and 600 notice views or downloads in 6 minutes.
         "DOWNLOAD_SLOTS": {
-            "api.ted.europa.eu": {"concurrency": 1, "delay": 2},
-            "ted.europa.eu": {"concurrency": 1, "delay": 3},
+            "api.ted.europa.eu": {"concurrency": 1, "delay": 1},
+            "ted.europa.eu": {"concurrency": 1, "delay": 2},
             # eB2B limits downloads in a short time across its subdomains (see eb2b_request).
             EB2B_SLOT: {"concurrency": 1, "delay": 5},
             SMARTPZP_SLOT: {"concurrency": 1, "delay": 2},
@@ -416,7 +417,12 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                 return response
             minutes, seconds = int(match.group(1) or 0), int(match.group(2) or 0)
             self.logger.info("eB2B download limit: waiting %d min for %s", minutes + 1, request.url)
-            await asyncio.sleep(minutes * 60 + seconds + 5)
+            # Free the control's slot while waiting, so that other controls can start.
+            self.control_slots.release()
+            try:
+                await asyncio.sleep(minutes * 60 + seconds + 5)
+            finally:
+                await self.control_slots.acquire()
 
     async def fetch(self, url_or_request, *, cache=False):
         """Download a URL or request through the downloader middlewares. Return a status-0 response on failure."""
