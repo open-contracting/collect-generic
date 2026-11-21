@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-19"
+__generated_at__ = "2026-11-20"
 
 import datetime as dt
 import html
@@ -26,7 +26,7 @@ FOLD = str.maketrans("ąćęłńóśźż", "acelnoszz")
 ROLES = [
     ("notice_change", r"zmian\w* ogłosz|ogłoszeni\w* o zmianie|sprostowani"),
     ("swz_change", r"zmian\w* (?:nr \d+ )?(?:tre[sś]ci )?(?:swz|idw|specyfikacji|instrukcji dla wykonawc)|modyfikacj"),
-    ("qa", r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp"),
+    ("qa", r"wyjaśnie|odpowied\w* na pytani|pytania i odpowiedzi|\bpytani|\bpyt\w* i odp|zapyta\w* wraz z odpowiedzi"),
     # Appeals, calls to join them, buyers' answers and KIO's rulings. SWZ changes made due to an appeal match above.
     # "odwoanie" is "odwołanie" with the ł dropped.
     (
