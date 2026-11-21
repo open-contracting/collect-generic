@@ -234,9 +234,9 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                     document["path"] = str(Path(control["control_id"], tender_id, document["path"]))
             row["documents"].extend(documents)
             row["tender_ids"].append(tender_id)
-            if deadline := self.final_deadline(tender):
+            if deadline := self.tender_final_deadline(tender):
                 row["bid_deadline_final"] = max(filter(None, [row["bid_deadline_final"], deadline.isoformat()]))
-            row["bid_deadline_original"] = row["bid_deadline_original"] or self.first_deadline(tender)
+            row["bid_deadline_original"] = row["bid_deadline_original"] or self.tender_first_deadline(tender)
         urls = list(dict.fromkeys(u for r in resolutions for u in r.get("urls", [])))
         platform = {}
         references = list(dict.fromkeys(ref for r in resolutions for ref in r.get("references", [])))

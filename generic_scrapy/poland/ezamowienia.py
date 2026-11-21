@@ -13,9 +13,9 @@ import scrapy
 
 from generic_scrapy.poland.common import (
     UNSAFE_FILENAME_RE,
-    _norm,
-    _text,
     compact,
+    node_text,
+    normalize_space,
     normalize_url,
     parse_datetime,
     role,
@@ -123,7 +123,7 @@ class EZamowieniaMixin:
         result["references"] = [
             item["value"] for item in items if item["label"] == "Numer referencyjny" and item["value"]
         ]
-        if match := PLATFORM_URL_RE.search(_norm(" ".join(response.xpath("//text()").getall()))):
+        if match := PLATFORM_URL_RE.search(normalize_space(" ".join(response.xpath("//text()").getall()))):
             return {**result, "urls": [normalize_url(match.group(1))]}
         return {**result, "error": f"{notice}: no documents URL in the notice"}
 
@@ -181,15 +181,15 @@ class EZamowieniaMixin:
         return documents
 
     @staticmethod
-    def submission_terms(tender):
+    def tender_submission_terms(tender):
         return [term for term in tender.get("terms") or [] if term.get("termType") == "SubmissionOffersDate"]
 
-    def final_deadline(self, tender):
-        terms = [parse_datetime(t["term"]) for t in self.submission_terms(tender) if t.get("isValid")]
+    def tender_final_deadline(self, tender):
+        terms = [parse_datetime(t["term"]) for t in self.tender_submission_terms(tender) if t.get("isValid")]
         return max(filter(None, terms), default=None)
 
-    def first_deadline(self, tender):
-        terms = self.submission_terms(tender)
+    def tender_first_deadline(self, tender):
+        terms = self.tender_submission_terms(tender)
         return terms[0]["term"] if terms else None
 
     async def collect_tender(self, tender_id, directory, tender=None):
@@ -258,7 +258,7 @@ class EZamowieniaMixin:
         start = parse_datetime(tender.get("initiationDate"))
         if not start or not tender.get("organizationId") or not tender.get("bzpNumber"):
             return []
-        end = max(filter(None, [self.final_deadline(tender), start + dt.timedelta(days=90)]))
+        end = max(filter(None, [self.tender_final_deadline(tender), start + dt.timedelta(days=90)]))
         notices = []
         for notice_type in BOARD_NOTICE_TYPES:
             query = {
@@ -306,7 +306,7 @@ def _parse_announcement_html(html):
     """
     sel = scrapy.Selector(text=html)
 
-    title = _text(sel.xpath("//h1[1]")) or None
+    title = node_text(sel.xpath("//h1[1]")) or None
     sections = []
     current = None
     unparsed = []
@@ -316,20 +316,24 @@ def _parse_announcement_html(html):
         if tag == "h2":
             if current is not None:
                 sections.append(current)
-            current = {"title": _text(node), "items": []}
+            current = {"title": node_text(node), "items": []}
         elif tag == "h3":
-            full_text = _text(node)
-            span_text = _text(node.xpath("span[contains(@class, 'normal')]")) or None
+            full_text = node_text(node)
+            span_text = node_text(node.xpath("span[contains(@class, 'normal')]")) or None
             match = ANNOUNCEMENT_KEY_RE.match(full_text)
             if not match:
                 unparsed.append({"section": current["title"] if current else None, "text": full_text})
                 continue
-            key, label, after_colon = match.group(1), _norm(match.group(2)), _norm(match.group(3) or "") or None
+            key, label, after_colon = (
+                match.group(1),
+                normalize_space(match.group(2)),
+                normalize_space(match.group(3) or "") or None,
+            )
             value = span_text or after_colon
             item = {"key": key, "label": label, "value": value, "extra": None}
             (current["items"] if current is not None else unparsed).append(item)
         elif tag == "p":
-            text = _text(node)
+            text = node_text(node)
             if not text or not current or not current["items"]:
                 continue
             last = current["items"][-1]

@@ -50,17 +50,17 @@ ROLES = [
 ROLES = [(name, re.compile(pattern.translate(FOLD))) for name, pattern in ROLES]
 
 
-def _norm(text):
+def normalize_space(text):
     return " ".join((text or "").split())
 
 
-def _text(selector):
-    return _norm(" ".join(selector.xpath(".//text()").getall()))
+def node_text(selector):
+    return normalize_space(" ".join(selector.xpath(".//text()").getall()))
 
 
 def role(*names):
     """Return the document's role (swz, opz, ppu, annex, swz_change, qa, appeal, notice, notice_change or other)."""
-    text = " ".join(_norm(name).lower().replace("_", " ") for name in names if name)
+    text = " ".join(normalize_space(name).lower().replace("_", " ") for name in names if name)
     text = unicodedata.normalize("NFC", text).translate(FOLD)
     return next((name for name, pattern in ROLES if pattern.search(text)), "other")
 

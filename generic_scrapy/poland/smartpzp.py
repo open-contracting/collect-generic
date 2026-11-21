@@ -12,7 +12,14 @@ from urllib.parse import urlparse
 
 import scrapy
 
-from generic_scrapy.poland.common import UNSAFE_FILENAME_RE, _text, parse_datetime, role, words_in_order, write_bytes
+from generic_scrapy.poland.common import (
+    UNSAFE_FILENAME_RE,
+    node_text,
+    parse_datetime,
+    role,
+    words_in_order,
+    write_bytes,
+)
 
 SMARTPZP_SLOT = "portal.smartpzp.pl"
 SMARTPZP_PROCEDURE_RE = re.compile(r"/public/postepowanie\?postepowanie=(\d+)")
@@ -56,7 +63,7 @@ class SmartPZPMixin:
                 "//span[normalize-space() = 'Termin składania ofert']"
                 "/following::span[@class = 'pzp-outputtext-content'][1]"
             )
-            if match_deadline := SMARTPZP_DATETIME_RE.match(_text(deadline)):
+            if match_deadline := SMARTPZP_DATETIME_RE.match(node_text(deadline)):
                 deadline = parse_datetime("{2}-{1}-{0} {3}".format(*match_deadline.groups()))
                 result["deadline"] = max(filter(None, [result["deadline"], deadline]))
 
@@ -86,8 +93,8 @@ class SmartPZPMixin:
 
             entries = {}
             for tr in rows:
-                name = _text(tr.xpath("td[2]"))
-                published = SMARTPZP_DATETIME_RE.match(_text(tr.xpath("td[3]")))
+                name = node_text(tr.xpath("td[2]"))
+                published = SMARTPZP_DATETIME_RE.match(node_text(tr.xpath("td[3]")))
                 entries[tr.attrib["data-rk"]] = {
                     "path": None,
                     "url": procedure_url,
@@ -141,7 +148,7 @@ class SmartPZPMixin:
                 rows = [
                     tr
                     for tr in smartpzp_update(search, table).xpath("//tr[@data-rk]")
-                    if words_in_order(reference, _text(tr.xpath("td[1]")))
+                    if words_in_order(reference, node_text(tr.xpath("td[1]")))
                 ]
                 if rows:
                     break

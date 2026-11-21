@@ -12,10 +12,10 @@ import scrapy
 from generic_scrapy.poland.common import (
     HTML_PAGE_ERROR,
     UNSAFE_FILENAME_RE,
-    _norm,
-    _text,
     alphanumeric,
     compact,
+    node_text,
+    normalize_space,
     parse_datetime,
     parse_size,
     role,
@@ -119,18 +119,18 @@ class MarketplanetMixin:
                 # A folder's files are read from its subpage. Skip it after numbering it, to keep the files' paths.
                 if tr.xpath(".//a[contains(@href, 'details?folder=')]"):
                     continue
-                title = _text(tr.xpath("td[contains(@class, 'text')][1]"))
-                published = MARKETPLANET_DATETIME_RE.match(_text(tr.xpath("td[@class='date-time']")))
+                title = node_text(tr.xpath("td[contains(@class, 'text')][1]"))
+                published = MARKETPLANET_DATETIME_RE.match(node_text(tr.xpath("td[@class='date-time']")))
                 entry = {
                     "path": None,
                     "url": f"{origin}/repository/download/{token}",
                     "title": title,
                     "file_name": title,
-                    "size": parse_size(_text(tr.xpath("td[contains(@class, 'medium')]"))),
+                    "size": parse_size(node_text(tr.xpath("td[contains(@class, 'medium')]"))),
                     "published_at": parse_datetime(published.group(0)).isoformat() if published else None,
                     "role": role(title),
                     "superseded": False,
-                    "state": _norm(
+                    "state": normalize_space(
                         tr.xpath("ancestor::div[contains(@class, 'mp_box')][1]//h2").xpath("string()").get()
                     ),
                 }
@@ -166,7 +166,7 @@ class MarketplanetMixin:
                     urls.extend(
                         f"{origin}{details_prefix}{tr.attrib['id']}/details"
                         for tr in search.css("tr.dataRow")
-                        if compact(reference) in compact(_text(tr.xpath("td[1]")))
+                        if compact(reference) in compact(node_text(tr.xpath("td[1]")))
                     )
         return list(dict.fromkeys(urls))
 
@@ -196,10 +196,10 @@ class MarketplanetMixin:
                     continue
                 for tr in search.css("tr.dataRow"):
                     # Long titles are truncated with "(..)".
-                    name = alphanumeric(_text(tr.xpath("td[2]")).removesuffix("(..)"))
+                    name = alphanumeric(node_text(tr.xpath("td[2]")).removesuffix("(..)"))
                     length = min(len(name), len(expected), 100)
                     # The dates columns, like the procedure's start and its publication.
-                    dates = [parse_datetime(_text(td) or None) for td in tr.xpath("td[@data-width = '110']")]
+                    dates = [parse_datetime(node_text(td) or None) for td in tr.xpath("td[@data-width = '110']")]
                     if (
                         length >= MARKETPLANET_TITLE_MATCH
                         and name[:length] == expected[:length]

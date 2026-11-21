@@ -78,7 +78,7 @@ class TEDMixin:
         )
         result = {
             "ted_notices": notices,
-            "deadline": self.procedure_deadline(notice, notices),
+            "deadline": self.ted_procedure_deadline(notice, notices),
             # Fall back to the lots' identifiers, which some buyers use as the procedure's.
             "references": (
                 reference_numbers(latest["internal-identifier-proc"])
@@ -150,7 +150,7 @@ class TEDMixin:
         return max(filter(None, deadlines), default=None)
 
     @classmethod
-    def procedure_deadline(cls, notice, notices):
+    def ted_procedure_deadline(cls, notice, notices):
         """Return the notice's bid deadline, as moved by the procedure's later notices published before it."""
         deadline = cls.ted_deadline(notice)
         start = notice.get("publication-date") or ""

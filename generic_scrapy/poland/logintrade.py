@@ -11,9 +11,9 @@ import scrapy
 
 from generic_scrapy.poland.common import (
     UNSAFE_FILENAME_RE,
-    _text,
     compact,
     host,
+    node_text,
     parse_datetime,
     parse_size,
     role,
@@ -38,7 +38,7 @@ class LogintradeMixin:
             if references and len(dict.fromkeys([url, *candidates])) > 1:
                 for candidate in dict.fromkeys([url, *candidates]):
                     response = await self.fetch(candidate)
-                    signature = _text(
+                    signature = node_text(
                         response.xpath(
                             "//h4[normalize-space() = 'Znak sprawy' or normalize-space() = 'Signature of the case']"
                             "/following-sibling::div[1]"
@@ -61,7 +61,7 @@ class LogintradeMixin:
                     self.logger.warning("Logintrade search failed (HTTP %s): %s", search.status, origin)
                     continue
                 for a in search.xpath("//tr[td]//a[contains(@href, 'zapytania_email')]"):
-                    if compact(reference) in compact(_text(a.xpath("ancestor::tr[1]/td[3]"))):
+                    if compact(reference) in compact(node_text(a.xpath("ancestor::tr[1]/td[3]"))):
                         procedure_urls.append(search.urljoin(a.attrib["href"]))
             procedure_urls = list(dict.fromkeys(procedure_urls))
             if not procedure_urls:
@@ -83,7 +83,7 @@ class LogintradeMixin:
                 "//h4[normalize-space() = 'Termin składania' or normalize-space() = 'Deadline for making offers']"
                 "/following-sibling::div[1]"
             )
-            if match := MARKETPLANET_DATETIME_RE.match(_text(deadline)):
+            if match := MARKETPLANET_DATETIME_RE.match(node_text(deadline)):
                 result["deadline"] = max(filter(None, [result["deadline"], parse_datetime(match.group(0))]))
 
             # The page can list an attachment twice (e.g. under the notice and in the document list).
@@ -93,14 +93,14 @@ class LogintradeMixin:
                 if not href or href in hrefs:
                     continue
                 hrefs.add(href)
-                title = _text(div.css(".attachment-name"))
-                published = LOGINTRADE_DATETIME_RE.match(_text(div.css(".attachment-date")))
+                title = node_text(div.css(".attachment-name"))
+                published = LOGINTRADE_DATETIME_RE.match(node_text(div.css(".attachment-date")))
                 entry = {
                     "path": None,
                     "url": response.urljoin(href),
                     "title": title,
                     "file_name": title,
-                    "size": parse_size(_text(div.css(".attachment-size"))),
+                    "size": parse_size(node_text(div.css(".attachment-size"))),
                     "published_at": (
                         parse_datetime("{2}-{1}-{0} {3}".format(*published.groups())).isoformat()
                         if published
