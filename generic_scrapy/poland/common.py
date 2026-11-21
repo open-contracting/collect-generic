@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-20"
+__generated_at__ = "2026-11-21"
 
 import datetime as dt
 import html
@@ -110,8 +110,8 @@ def write_bytes(path, body):
 
 
 def normalize_url(url):
-    """Unescape HTML entities and correct misspelled hosts in a notice's documents URL."""
-    url = html.unescape(url)
+    """Unescape HTML entities, strip trailing punctuation and correct misspelled hosts in a notice's documents URL."""
+    url = html.unescape(url).rstrip(".,;)")
     for typo, correct in HOST_TYPOS.items():
         url = re.sub(rf"^(?:https?://)?{re.escape(typo)}", f"https://{correct}", url)
     return url
