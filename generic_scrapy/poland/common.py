@@ -73,7 +73,7 @@ SKIPPABLE = [
 SKIPPABLE = [(name, re.compile(pattern.translate(FOLD))) for name, pattern in SKIPPABLE]
 # Key whatever else the name says: pricing forms (formularz cenowy, RCO), technical specifications and the PFU.
 KEY_RE = re.compile(
-    r"\brco\b|formularz\w* (?:cenow|asortyment|parametr)|kosztorys\w* ofertow|stwi?orb|\bs?st\b"
+    r"\brco\b|formularz\w* (?:cenow|asortyment|parametr)|kosztorys\w* ofertow|stwi?orb?|\bs?st\b"
     r"|specyfikacj\w* techniczn|opis\w* techniczn|\bpfu\b|program\w* funkcjonalno".translate(FOLD)
 )
 # Characters per page below which a PDF is a scan or mostly images, as in oecd-poland's analysis/inventory.py.
