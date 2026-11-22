@@ -2,10 +2,12 @@ __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
 __generated_at__ = "2026-11-22"
 
+import bz2
 import collections
 import datetime as dt
 import html
 import json
+import lzma
 import re
 import struct
 import unicodedata
@@ -29,6 +31,8 @@ HOST_TYPOS = {
 SPANNED_PART_RE = re.compile(r"\.z(\d{2})$", re.IGNORECASE)
 NUMBERED_PART_RE = re.compile(r"\.zip\.(\d{3})$", re.IGNORECASE)
 # The spider prefixes some platforms' files with their number on the page.
+# Levels of ZIP files within ZIP files whose members are listed.
+MAX_ZIP_DEPTH = 3
 FILE_NUMBER_RE = re.compile(r"^(\d+)__")
 WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 BUYER_STOPWORDS = {"spolka", "ograniczona", "odpowiedzialnoscia", "akcyjna", "the"}
@@ -173,30 +177,38 @@ def zip_info_name(info):
 
 def zip_entries(directory):
     """Return ``{"name", "size", "crc", "dir"}`` for each member in a ZIP file's member list."""
-    entries, position = [], 0
+    return [entry for entry, _ in zip_records(directory)]
+
+
+def zip_records(directory):
+    """Return ``zip_entries``, each paired with the member's ``(method, flags, compressed size, disk, offset)``."""
+    records, position = [], 0
     while directory[position : position + 4] == b"PK\x01\x02":
-        flags, crc, size, name_length, extra_length, comment_length, external = struct.unpack(
-            "<8xH6xI4xIHHH4xI", directory[position : position + 42]
+        (flags, method, crc, compressed, size, name_length, extra_length, comment_length, disk, external, offset) = (
+            struct.unpack("<8xHH4xIIIHHHH2xII", directory[position : position + 46])
         )
         start = position + 46
         raw = directory[start : start + name_length]
         extra = directory[start + name_length : start + name_length + extra_length]
         i = 0
-        while size == ZIP64_OFFSET and i + 12 <= len(extra):
+        while i + 4 <= len(extra):
             kind, length = struct.unpack("<HH", extra[i : i + 4])
-            if kind == 1:  # ZIP64 extended information, whose first field is the size
-                size = struct.unpack("<Q", extra[i + 4 : i + 12])[0]
+            if kind == 1:  # ZIP64 extended information: only the fields that overflow, in this order
+                values = iter(struct.unpack(f"<{length // 8}Q", extra[i + 4 : i + 4 + length // 8 * 8]))
+                size = next(values) if size == ZIP64_OFFSET else size
+                compressed = next(values) if compressed == ZIP64_OFFSET else compressed
+                offset = next(values) if offset == ZIP64_OFFSET else offset
+                break
             i += 4 + length
-        entries.append(
-            {
-                "name": zip_name(raw, flags, extra),
-                "size": size,
-                "crc": f"{crc:08X}",
-                "dir": raw.endswith((b"/", b"\\")) or bool(external & 0x10) or bool(external >> 16 & 0o040000),
-            }
-        )
+        entry = {
+            "name": zip_name(raw, flags, extra),
+            "size": size,
+            "crc": f"{crc:08X}",
+            "dir": raw.endswith((b"/", b"\\")) or bool(external & 0x10) or bool(external >> 16 & 0o040000),
+        }
+        records.append((entry, (method, flags, compressed, disk, offset)))
         position = start + name_length + extra_length + comment_length
-    return entries
+    return records
 
 
 def zip_members(directory):
@@ -206,7 +218,7 @@ def zip_members(directory):
 
 def zip_set_entries(paths, *, spanned=False):
     """
-    Return ``zip_entries`` for a ZIP file, or a split set's parts in order.
+    Return ``zip_entries`` for a ZIP file, or a split set's parts in order. A ZIP member has its own ``members``.
 
     A spanned set (.z01, .z02, ..., .zip) has a disk per part. A numbered set (.zip.001, .zip.002, ...) is one file cut
     into parts.
@@ -216,9 +228,9 @@ def zip_set_entries(paths, *, spanned=False):
     def read(disk, offset, length):
         if not spanned:
             disk = 0
-            while disk < len(sizes) - 1 and offset >= sizes[disk]:
-                offset -= sizes[disk]
-                disk += 1
+        while disk < len(sizes) - 1 and offset >= sizes[disk]:
+            offset -= sizes[disk]
+            disk += 1
         chunks = []
         while length > 0 and disk < len(paths):
             with paths[disk].open("rb") as f:
@@ -228,7 +240,10 @@ def zip_set_entries(paths, *, spanned=False):
             disk, offset = disk + 1, 0
         return b"".join(chunks)
 
-    last, end = (len(paths) - 1, sizes[-1]) if spanned else (0, sum(sizes))
+    return _zip_set_entries(read, *((len(paths) - 1, sizes[-1]) if spanned else (0, sum(sizes))))
+
+
+def _zip_set_entries(read, last, end, depth=0):
     start = max(0, end - 65557)  # the end record, with a comment of up to 64 KiB
     tail = read(last, start, end - start)
     at = tail.rfind(b"PK\x05\x06")
@@ -243,10 +258,46 @@ def zip_set_entries(paths, *, spanned=False):
         if record[:4] != b"PK\x06\x06":
             raise ValueError("no ZIP64 end of central directory record")
         disk, count, length, offset = struct.unpack("<20xI8xQQQ", record)
-    entries = zip_entries(read(disk, offset, length))
-    if len(entries) != count:
-        raise ValueError(f"{len(entries)} members in the member list, expected {count}")
-    return entries
+    records = zip_records(read(disk, offset, length))
+    if len(records) != count:
+        raise ValueError(f"{len(records)} members in the member list, expected {count}")
+    for entry, location in records:
+        if depth < MAX_ZIP_DEPTH and not entry["dir"] and entry["name"].lower().endswith(".zip"):
+            try:
+                data = _zip_member_data(read, entry, *location)
+                entry["members"] = _zip_set_entries(
+                    lambda _, at, n, data=data: data[at : at + n], 0, len(data), depth + 1
+                )
+            except ValueError, struct.error, zlib.error, OSError, EOFError, lzma.LZMAError:
+                pass
+    return [entry for entry, _ in records]
+
+
+def _zip_member_data(read, entry, method, flags, compressed, disk, offset):
+    header = read(disk, offset, 30)
+    if header[:4] != b"PK\x03\x04" or flags & 1:
+        raise ValueError("unreadable member")
+    name_length, extra_length = struct.unpack("<HH", header[26:30])
+    data = read(disk, offset + 30 + name_length + extra_length, compressed)
+    match method:
+        case 0:
+            pass
+        case 8:
+            data = zlib.decompressobj(-15).decompress(data)
+        case 12:
+            data = bz2.decompress(data)
+        case 14:  # LZMA: a version, the size of the properties, the properties, then raw LZMA data
+            properties = data[4 : 4 + struct.unpack("<H", data[2:4])[0]]
+            lc_lp_pb, dict_size = struct.unpack("<BI", properties[:5])
+            lzma_filter = {"id": lzma.FILTER_LZMA1, "dict_size": dict_size, "lc": lc_lp_pb % 9}
+            lzma_filter |= {"lp": lc_lp_pb // 9 % 5, "pb": lc_lp_pb // 45}
+            decompressor = lzma.LZMADecompressor(lzma.FORMAT_RAW, filters=[lzma_filter])
+            data = decompressor.decompress(data[4 + len(properties) :], entry["size"])
+        case _:
+            raise ValueError(f"unsupported compression method {method}")
+    if len(data) != entry["size"] or f"{zlib.crc32(data):08X}" != entry["crc"]:
+        raise ValueError("member doesn't match its size and CRC")
+    return data
 
 
 def zip_set_parts(path):
@@ -294,7 +345,12 @@ def zip_set_parts(path):
 
 
 def archive_members(path):
-    """Return ``zip_set_entries`` for a ZIP file or the entry point of a split set, or None."""
+    """
+    Return ``zip_set_entries`` for a ZIP file or the entry point of a split set, or None.
+
+    7z and RAR files aren't listed. Their names are Unicode (UTF-16 in 7z, UTF-8 in RAR 5, and a Unicode copy of any
+    non-ASCII name in RAR 4), so every reader gets the same names. ZIP names can be in a code page (see zip_name).
+    """
     try:
         if found := zip_set_parts(path):
             parts, spanned = found
