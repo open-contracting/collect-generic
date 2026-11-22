@@ -19,6 +19,7 @@ from generic_scrapy.poland.common import (
     HTML_PAGE_ERROR,
     HTML_RE,
     TENDER_ID_RE,
+    archive_members,
     host,
     parse_datetime,
     same_buyer,
@@ -365,6 +366,9 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                 )
         else:
             row["reason"] = "; ".join(r["error"] for r in resolutions if r.get("error")) or "no documents URL"
+        for document in row["documents"]:
+            if document.get("path") and (members := archive_members(self.output_directory() / document["path"])):
+                document["members"] = members
         set_status(row, files)
 
         self.log_row(row)

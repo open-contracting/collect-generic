@@ -2,6 +2,7 @@ __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
 __generated_at__ = "2026-11-22"
 
+import collections
 import datetime as dt
 import html
 import json
@@ -24,6 +25,11 @@ HOST_TYPOS = {
     "platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl",
     "www.platformazakupowa-plk-sa.pl": "platformazakupowa.plk-sa.pl",
 }
+# A split ZIP set's parts: .z01, .z02, ..., .zip (spanned) or .zip.001, .zip.002, ... (numbered).
+SPANNED_PART_RE = re.compile(r"\.z(\d{2})$", re.IGNORECASE)
+NUMBERED_PART_RE = re.compile(r"\.zip\.(\d{3})$", re.IGNORECASE)
+# The spider prefixes some platforms' files with their number on the page.
+FILE_NUMBER_RE = re.compile(r"^(\d+)__")
 WARSAW = zoneinfo.ZoneInfo("Europe/Warsaw")
 BUYER_STOPWORDS = {"spolka", "ograniczona", "odpowiedzialnoscia", "akcyjna", "the"}
 
@@ -241,6 +247,61 @@ def zip_set_entries(paths, *, spanned=False):
     if len(entries) != count:
         raise ValueError(f"{len(entries)} members in the member list, expected {count}")
     return entries
+
+
+def zip_set_parts(path):
+    """
+    Return a ZIP file's parts in order and whether they're spanned, or None if it's not an entry point.
+
+    An entry point is a .zip file or a numbered set's .zip.001 part. Parts share a name, apart from the spider's file
+    number. If a part is repeated, the nearest file number wins.
+    """
+
+    def split(name):
+        match = FILE_NUMBER_RE.match(name)
+        return (int(match.group(1)), name[match.end() :]) if match else (0, name)
+
+    number, name = split(path.name)
+    if name.lower().endswith(".zip"):
+        stem, pattern = name[:-4], SPANNED_PART_RE
+    elif (match := NUMBERED_PART_RE.search(name)) and match.group(1) == "001":
+        stem, pattern = name[: match.start()], NUMBERED_PART_RE
+    else:
+        return None
+    candidates = collections.defaultdict(list)
+    for sibling in path.parent.iterdir():
+        other_number, other = split(sibling.name)
+        if (match := pattern.search(other)) and other[: match.start()].lower() == stem.lower():
+            candidates[int(match.group(1))].append((abs(other_number - number), sibling.name))
+    if pattern is SPANNED_PART_RE:
+        # The end record's disk number is the count of other parts, which can be fewer than share the name.
+        with path.open("rb") as f:
+            f.seek(max(0, path.stat().st_size - 65557))
+            tail = f.read()
+        if (at := tail.rfind(b"PK\x05\x06")) < 0:
+            raise ValueError("no end of central directory record")
+        count = struct.unpack("<H", tail[at + 4 : at + 6])[0]
+        if count == 0xFFFF and tail[at - 20 : at - 16] == b"PK\x06\x07":  # noqa: PLR2004
+            count = struct.unpack("<I", tail[at - 4 : at])[0] - 1  # the ZIP64 locator's total number of disks
+    else:
+        count = len(candidates)
+    if any(i not in candidates for i in range(1, count + 1)):
+        raise ValueError("missing parts")
+    parts = [path.parent / min(candidates[i])[1] for i in range(1, count + 1)]
+    if pattern is SPANNED_PART_RE:
+        return [*parts, path], bool(parts)
+    return parts, False
+
+
+def archive_members(path):
+    """Return ``zip_set_entries`` for a ZIP file or the entry point of a split set, or None."""
+    try:
+        if found := zip_set_parts(path):
+            parts, spanned = found
+            return zip_set_entries(parts, spanned=spanned)
+    except OSError, ValueError, struct.error:
+        pass
+    return None
 
 
 def host(url):
