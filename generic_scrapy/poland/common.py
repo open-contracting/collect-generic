@@ -86,8 +86,9 @@ KEY_RE = re.compile(
     r"\brco\b|formularz\w* (?:cenow|asortyment|parametr)|kosztorys\w* ofertow|stwi?orb?|\bs?st\b"
     r"|specyfikacj\w* techniczn|opis\w* techniczn|\bpfu\b|program\w* funkcjonalno".translate(FOLD)
 )
-# Characters per page below which a PDF is a scan or mostly images, as in oecd-poland's analysis/inventory.py.
-SCANNED_CHARS_PER_PAGE = 50
+# Characters per page below which a PDF has no text layer to speak of (a scan, drawings or blanks), as in oecd-poland's
+# analysis/inventory.py.
+NO_TEXT_CHARS_PER_PAGE = 50
 LOW_TEXT_CHARS_PER_PAGE = 300
 TEXT_LAYER_PAGES = 20
 # A ZIP file's member-list offset when the real one is in a ZIP64 record.
@@ -121,7 +122,7 @@ def skippable(*names):
 
 
 def text_layer(body):
-    """Return whether a PDF is ``text``, ``low`` (little text) or ``scanned``, from up to 20 pages, or None."""
+    """Return whether a PDF is ``text``, ``low`` (little text) or ``no_text``, from up to 20 pages, or None."""
     try:
         with pymupdf.open(stream=body, filetype="pdf") as pdf:
             pages = min(len(pdf), TEXT_LAYER_PAGES)
@@ -130,7 +131,7 @@ def text_layer(body):
             chars = sum(len(pdf[i].get_text().strip()) for i in range(pages)) / pages
     except Exception:  # noqa: BLE001 # a damaged or encrypted PDF has no measurable text layer
         return None
-    return "scanned" if chars < SCANNED_CHARS_PER_PAGE else "low" if chars < LOW_TEXT_CHARS_PER_PAGE else "text"
+    return "no_text" if chars < NO_TEXT_CHARS_PER_PAGE else "low" if chars < LOW_TEXT_CHARS_PER_PAGE else "text"
 
 
 def zip_directory(tail):
