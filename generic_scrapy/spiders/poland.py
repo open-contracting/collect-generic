@@ -22,7 +22,11 @@ from generic_scrapy.poland.common import (
     host,
     parse_datetime,
     same_buyer,
+    skippable,
+    text_layer,
     write_bytes,
+    zip_directory,
+    zip_members,
 )
 from generic_scrapy.poland.eb2b import EB2B_HOSTS, EB2B_LIMIT_ERROR, EB2B_LIMIT_RE, EB2B_SLOT, EB2BMixin
 from generic_scrapy.poland.ezamowienia import DELETED_AUTOMATICALLY, EZamowieniaMixin
@@ -35,12 +39,14 @@ JSON_ERROR_RE = re.compile(rb'\s*\{\s*"success"\s*:\s*false\b')
 # Documents published after the bid deadline, or on its day for the opening.
 POST_DEADLINE_RE = re.compile(r"wyb[oó]r|wynik|udzieleni|uniewa|cofni|\(can-|\(veat")
 OPENING_RE = re.compile(r"otwarci|kwo[tc]|zestawieni\w* ofert|art\.? ?222")
-# Platform files that aren't key documents, downloaded last and only up to MAX_MINOR_FILE_SIZE.
+# Platform files downloaded after the SWZ, OPZ, contract terms, changes and answers.
 MINOR_ROLES = {"annex", "other"}
-# Larger annexes are usually design documentation, not the SWZ, OPZ or contract terms.
-MAX_MINOR_FILE_SIZE = 100 * 1024 * 1024
+# Design documentation and bills of quantities over this size are recorded but not downloaded (see skippable()).
+SKIPPABLE_FILE_SIZE = 100 * 1024 * 1024
 # Some OPZ archives are several hundred MB.
-MAX_KEY_FILE_SIZE = 2 * 1024 * 1024 * 1024
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
+# The end of a ZIP file, which holds its member list unless the archive has thousands of members.
+ZIP_TAIL_SIZE = 64 * 1024
 # Controls collected at a time, in priority order. They share the per-domain download slots.
 CONCURRENT_CONTROLS = 8
 PRIORITY_GROUPS = [
@@ -90,6 +96,17 @@ def different_buyers(control, resolutions):
     if all(same_buyer(named[0][1], buyers) for _, buyers in named[1:]):
         return None
     return "notices from different buyers: " + "; ".join(f"{'; '.join(b)} ({notice})" for notice, b in named)
+
+
+def set_status(row, files):
+    """Set the status from the files other than notices, if any is saved. Files are key unless ``skipped``."""
+    key = [d for d in files if not d.get("skipped")]
+    unavailable = [d for d in key if not d.get("path") and not d.get("after_deadline")]
+    row["files_skipped"] = dict(collections.Counter(d["skipped"] for d in files if d.get("skipped")))
+    row["key_unavailable"] = [{"role": d["role"], "title": d["title"]} for d in unavailable]
+    if any(d.get("path") for d in key):
+        row["status"] = "partial" if unavailable else "complete"
+        row["reason"] = f"{len(unavailable)} of {len(key)} key files unavailable" if unavailable else None
 
 
 def quality(row):
@@ -265,6 +282,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             "crawl": self.crawl_directory,
         }
         resolutions = [await self.resolve(notice) for notice in control["notices"]]
+        row["contract_type"] = next((r["contract_type"] for r in resolutions if r.get("contract_type")), None)
         if reason := different_buyers(control, resolutions):
             row["reason"] = reason
             self.log_row(row)
@@ -321,8 +339,11 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
 
         # A link to another site has no file name, but counts as a file that wasn't downloaded. Notices alone don't
         # make a procedure's documents found.
-        files = [d for d in row["documents"] if (d.get("file_name") or d.get("error")) and d not in notices]
-        saved = [d for d in files if d.get("path")]
+        files = [
+            d
+            for d in row["documents"]
+            if (d.get("file_name") or d.get("error") or "skipped" in d) and d not in notices
+        ]
         if tender_ids:
             row["source"] = "ezamowienia"
             row["procedure_url"] = self.PROCEDURE_URL.format(id=tender_ids[0])
@@ -344,11 +365,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                 )
         else:
             row["reason"] = "; ".join(r["error"] for r in resolutions if r.get("error")) or "no documents URL"
-        if saved:
-            row["status"] = "complete" if len(saved) == len(files) else "partial"
-            row["reason"] = (
-                None if len(saved) == len(files) else f"{len(files) - len(saved)} of {len(files)} files unavailable"
-            )
+        set_status(row, files)
 
         self.log_row(row)
 
@@ -416,13 +433,19 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
         for entry, path, request in sorted(files, key=lambda file: file[0]["role"] in MINOR_ROLES):
             # Re-runs with the same crawl_time resume, as Marketplanet downloads aren't cached.
             if not (directory / path).exists():
-                if entry["role"] in MINOR_ROLES and (entry["size"] or 0) > MAX_MINOR_FILE_SIZE:
-                    entry["error"] = "not downloaded (annex or other file over 100 MB)"
+                size = entry["size"] or 0
+                if size > SKIPPABLE_FILE_SIZE and (category := skippable(entry["title"], entry.get("file_name"))):
+                    entry["skipped"] = category
+                    if path.suffix.lower() == ".zip":
+                        entry["contents"] = await self.zip_contents(request, size)
+                    continue
+                if size > MAX_FILE_SIZE:
+                    entry["error"] = "not downloaded (over 2 GB)"
                     continue
                 # Some files are hundreds of MB, and platforms can send them slowly.
-                request.meta.update({"download_timeout": 1800, "max_retry_times": 1})
-                if entry["role"] not in MINOR_ROLES:
-                    request.meta["download_maxsize"] = MAX_KEY_FILE_SIZE
+                request.meta.update(
+                    {"download_timeout": 1800, "max_retry_times": 1, "download_maxsize": MAX_FILE_SIZE}
+                )
                 response = await self.fetch_file(request)
                 if response.status != HTTPStatus.OK:
                     entry["error"] = f"HTTP {response.status}"
@@ -439,7 +462,35 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                     )
                     continue
                 write_bytes(directory / path, response.body)
+            if path.suffix.lower() == ".pdf" and "text_layer" not in entry:
+                entry["text_layer"] = text_layer((directory / path).read_bytes())
             entry["path"] = str(Path(directory.name, path))
+
+    async def zip_contents(self, request, size):
+        """Return ``[name, size]`` for each member of a ZIP file, from two small range requests, or None."""
+        meta = {"dont_cache": True, "download_maxsize": 2 * ZIP_TAIL_SIZE, "max_retry_times": 1}
+        response = await self.fetch_file(
+            request.replace(
+                headers={**request.headers.to_unicode_dict(), "Range": f"bytes=-{ZIP_TAIL_SIZE}"},
+                meta={**request.meta, **meta},
+            )
+        )
+        if response.status != HTTPStatus.PARTIAL_CONTENT or not (location := zip_directory(response.body)):
+            return None
+        offset, length = location
+        start = offset - (size - len(response.body))
+        if start >= 0:
+            return zip_members(response.body[start : start + length]) or None
+        meta["download_maxsize"] = length + 1024
+        response = await self.fetch_file(
+            request.replace(
+                headers={**request.headers.to_unicode_dict(), "Range": f"bytes={offset}-{offset + length - 1}"},
+                meta={**request.meta, **meta},
+            )
+        )
+        if response.status != HTTPStatus.PARTIAL_CONTENT:
+            return None
+        return zip_members(response.body) or None
 
     # HTTP helpers.
 

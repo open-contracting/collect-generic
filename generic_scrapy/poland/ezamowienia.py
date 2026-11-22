@@ -21,6 +21,7 @@ from generic_scrapy.poland.common import (
     normalize_url,
     parse_datetime,
     role,
+    text_layer,
     write_bytes,
     write_json,
 )
@@ -32,6 +33,7 @@ ANNOUNCEMENT_KEY_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)*)\.?\)\s*(.*?)(?::\s*
 PLATFORM_URL_RE = re.compile(r"Adres strony internetowej prowadzonego postępowania:?\s*(\S+)")
 # Documents in this state have no file ("Brak załącznika dla wskazanego dokumentu").
 DELETED_AUTOMATICALLY = "DeletedAutomatically"
+ORDER_TYPES = {"Delivery": "supplies", "Services": "services", "Works": "works"}
 BOARD_NOTICE_TYPES = ("ContractNotice", "NoticeUpdateNotice")
 # Board/Search ignores PageSize above 10, so cap the pages read when listing an organization's notices.
 MAX_NOTICE_PAGES = 30
@@ -114,6 +116,7 @@ class EZamowieniaMixin:
             }
         result = {
             "buyers": [hit["organizationName"]] if hit.get("organizationName") else [],
+            "contract_type": ORDER_TYPES.get(hit.get("orderType")),
             "deadline": parse_datetime(hit.get("submittingOffersDate")),
         }
         if hit.get("tenderId"):
@@ -236,6 +239,8 @@ class EZamowieniaMixin:
                     entry["error"] = HTML_PAGE_ERROR
                 else:
                     write_bytes(directory / path, response.body)
+                    if path.suffix.lower() == ".pdf":
+                        entry["text_layer"] = text_layer(response.body)
                     entry["path"] = str(path)
             elif document.get("url"):
                 entry["error"] = "link to another site, not followed"

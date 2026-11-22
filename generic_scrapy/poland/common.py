@@ -6,9 +6,13 @@ import datetime as dt
 import html
 import json
 import re
+import struct
 import unicodedata
 import zoneinfo
+from pathlib import Path
 from urllib.parse import urlparse
+
+import pymupdf
 
 HTML_PAGE_ERROR = "HTML page instead of the file"
 HTML_RE = re.compile(rb"\s*(?:<!--.*?-->\s*)*<(?:!doctype html|html|head)\b", re.IGNORECASE | re.DOTALL)
@@ -51,6 +55,33 @@ ROLES = [
 ]
 ROLES = [(name, re.compile(pattern.translate(FOLD))) for name, pattern in ROLES]
 
+# Large files that needn't be downloaded: drawings and other design documentation, and bills of quantities. Everything
+# else is key, including technical specifications (STWiORB, opis techniczny) and pricing forms, which can set
+# technical parameters.
+DRAWING_EXTENSIONS = {".dwg", ".dxf", ".dwf", ".dgn", ".tif", ".tiff", ".ifc", ".rvt", ".skp"}
+SKIPPABLE = [
+    ("bill_of_quantities", r"przedmiar|kosztorys\w* inwestorsk|ślep\w* kosztorys|\.ath\b"),
+    (
+        "design_documentation",
+        (
+            r"rysun|\brys\.|projekt\w* (?:wykonawcz|budowlan|techniczn|architektoniczn)|dokumentacj\w* projektow"
+            r"|dok\.? ?proj|\bp[bw]\b|część rysunkow|plan\w* sytuacyjn|inwentaryzacj|geolog|geotechn|drawing|design"
+        ),
+    ),
+]
+SKIPPABLE = [(name, re.compile(pattern.translate(FOLD))) for name, pattern in SKIPPABLE]
+# Key whatever else the name says: pricing forms (formularz cenowy, RCO), technical specifications and the PFU.
+KEY_RE = re.compile(
+    r"\brco\b|formularz\w* (?:cenow|asortyment|parametr)|kosztorys\w* ofertow|stwi?orb|\bs?st\b"
+    r"|specyfikacj\w* techniczn|opis\w* techniczn|\bpfu\b|program\w* funkcjonalno".translate(FOLD)
+)
+# Characters per page below which a PDF is a scan or mostly images, as in oecd-poland's analysis/inventory.py.
+SCANNED_CHARS_PER_PAGE = 50
+LOW_TEXT_CHARS_PER_PAGE = 300
+TEXT_LAYER_PAGES = 20
+# A ZIP file's member-list offset when the real one is in a ZIP64 record.
+ZIP64_OFFSET = 0xFFFFFFFF
+
 
 def normalize_space(text):
     return " ".join((text or "").split())
@@ -65,6 +96,57 @@ def role(*names):
     text = " ".join(normalize_space(name).lower().replace("_", " ") for name in names if name)
     text = unicodedata.normalize("NFC", text).translate(FOLD)
     return next((name for name, pattern in ROLES if pattern.search(text)), "other")
+
+
+def skippable(*names):
+    """Return whether a file is ``design_documentation`` or a ``bill_of_quantities`` by its names, or None."""
+    if any(Path(name).suffix.lower() in DRAWING_EXTENSIONS for name in names if name):
+        return "design_documentation"
+    text = " ".join(normalize_space(name).lower().replace("_", " ") for name in names if name)
+    text = unicodedata.normalize("NFC", text).translate(FOLD)
+    if KEY_RE.search(text):
+        return None
+    return next((name for name, pattern in SKIPPABLE if pattern.search(text)), None)
+
+
+def text_layer(body):
+    """Return whether a PDF is ``text``, ``low`` (little text) or ``scanned``, from up to 20 pages, or None."""
+    try:
+        with pymupdf.open(stream=body, filetype="pdf") as pdf:
+            pages = min(len(pdf), TEXT_LAYER_PAGES)
+            if not pages:
+                return None
+            chars = sum(len(pdf[i].get_text().strip()) for i in range(pages)) / pages
+    except Exception:  # noqa: BLE001 # a damaged or encrypted PDF has no measurable text layer
+        return None
+    return "scanned" if chars < SCANNED_CHARS_PER_PAGE else "low" if chars < LOW_TEXT_CHARS_PER_PAGE else "text"
+
+
+def zip_directory(tail):
+    """Return the offset and length of a ZIP file's member list, from its last bytes, or None (including ZIP64)."""
+    end = tail.rfind(b"PK\x05\x06")
+    if end < 0 or len(tail) - end < 22:  # noqa: PLR2004 # the end-of-central-directory record's length
+        return None
+    length, offset = struct.unpack("<II", tail[end + 12 : end + 20])
+    return None if offset == ZIP64_OFFSET else (offset, length)
+
+
+def zip_members(directory):
+    """Return ``[name, size]`` for each member in a ZIP file's member list."""
+    members, position = [], 0
+    while directory[position : position + 4] == b"PK\x01\x02":
+        flags, size, name_length, extra_length, comment_length = struct.unpack(
+            "<H14xIHHH", directory[position + 8 : position + 34]
+        )
+        name = directory[position + 46 : position + 46 + name_length]
+        try:
+            name = name.decode("utf-8")
+        except UnicodeDecodeError:
+            # Polish Windows archivers write names in code page 852 without setting the UTF-8 flag (0x800).
+            name = name.decode("utf-8" if flags & 0x800 else "cp852", "replace")
+        members.append([name, size])
+        position += 46 + name_length + extra_length + comment_length
+    return members
 
 
 def host(url):

@@ -20,6 +20,7 @@ from generic_scrapy.poland.common import (
     normalize_url,
     parse_datetime,
     reference_numbers,
+    text_layer,
     write_bytes,
 )
 
@@ -46,6 +47,7 @@ TED_FIELDS = [
     "ojs-number",
     "buyer-name",
     "buyer-country",
+    "contract-nature",
     "title-proc",
     *TED_URL_FIELDS,
 ]
@@ -88,6 +90,7 @@ class TEDMixin:
         )
         result = {
             "buyers": buyers,
+            "contract_type": next(iter(notice.get("contract-nature") or []), None),
             "ted_notices": notices,
             "original_deadline": self.ted_deadline(notice),
             "deadline": (
@@ -226,6 +229,7 @@ class TEDMixin:
                 path = Path("ted", document["file_name"])
                 write_bytes(directory / path, response.body)
                 document["path"] = str(Path(directory.name, path))
+                document["text_layer"] = text_layer(response.body)
 
     async def ted_search(self, query):
         """Return the matching notices, or the HTTP status if the search failed."""
