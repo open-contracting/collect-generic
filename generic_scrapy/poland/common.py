@@ -140,12 +140,16 @@ def zip_name(raw, flags, extra=b""):
     while position + 4 <= len(extra):
         kind, length = struct.unpack("<HH", extra[position : position + 4])
         data = extra[position + 4 : position + 4 + length]
-        # An Info-ZIP Unicode Path field applies only if written for this name (version 1, with the name's CRC).
+        # An Info-ZIP Unicode Path field applies only if written for this name (version 1, with the name's CRC). Some
+        # archivers fill it with the name's bytes read as CP437, which is wrong for Polish names.
         if kind == 0x7075 and len(data) > 5 and data[0] == 1 and data[1:5] == struct.pack("<I", zlib.crc32(raw)):  # noqa: PLR2004
             try:
-                return data[5:].decode("utf-8")
+                name = data[5:].decode("utf-8")
             except UnicodeDecodeError:
                 break
+            if name != raw.decode("cp437"):
+                return name.replace("\\", "/")
+            break
         position += 4 + length
     try:
         return raw.decode("utf-8")
