@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-21"
+__generated_at__ = "2026-11-22"
 
 import datetime as dt
 import html
@@ -8,6 +8,7 @@ import json
 import re
 import struct
 import unicodedata
+import zlib
 import zoneinfo
 from pathlib import Path
 from urllib.parse import urlparse
@@ -131,6 +132,35 @@ def zip_directory(tail):
     return None if offset == ZIP64_OFFSET else (offset, length)
 
 
+def zip_name(raw, flags, extra=b""):
+    """Decode a ZIP member's name from its bytes, flags and extra field. Every reader of the stores should use this."""
+    if flags & 0x800:
+        return raw.decode("utf-8", "replace")
+    position = 0
+    while position + 4 <= len(extra):
+        kind, length = struct.unpack("<HH", extra[position : position + 4])
+        data = extra[position + 4 : position + 4 + length]
+        # An Info-ZIP Unicode Path field applies only if written for this name (version 1, with the name's CRC).
+        if kind == 0x7075 and len(data) > 5 and data[0] == 1 and data[1:5] == struct.pack("<I", zlib.crc32(raw)):  # noqa: PLR2004
+            try:
+                return data[5:].decode("utf-8")
+            except UnicodeDecodeError:
+                break
+        position += 4 + length
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        # Polish Windows archivers write names in code page 852 without setting the UTF-8 flag.
+        return raw.decode("cp852")
+
+
+def zip_info_name(info):
+    """Decode a ``zipfile.ZipInfo``'s name with ``zip_name``."""
+    return zip_name(
+        info.orig_filename.encode("utf-8" if info.flag_bits & 0x800 else "cp437"), info.flag_bits, info.extra
+    )
+
+
 def zip_members(directory):
     """Return ``[name, size]`` for each member in a ZIP file's member list."""
     members, position = [], 0
@@ -138,14 +168,12 @@ def zip_members(directory):
         flags, size, name_length, extra_length, comment_length = struct.unpack(
             "<H14xIHHH", directory[position + 8 : position + 34]
         )
-        name = directory[position + 46 : position + 46 + name_length]
-        try:
-            name = name.decode("utf-8")
-        except UnicodeDecodeError:
-            # Polish Windows archivers write names in code page 852 without setting the UTF-8 flag (0x800).
-            name = name.decode("utf-8" if flags & 0x800 else "cp852", "replace")
-        members.append([name, size])
-        position += 46 + name_length + extra_length + comment_length
+        start = position + 46
+        raw = directory[start : start + name_length]
+        members.append(
+            [zip_name(raw, flags, directory[start + name_length : start + name_length + extra_length]), size]
+        )
+        position = start + name_length + extra_length + comment_length
     return members
 
 

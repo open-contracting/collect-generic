@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-19"
+__generated_at__ = "2026-11-22"
 
 import io
 import re
@@ -19,6 +19,7 @@ from generic_scrapy.poland.common import (
     role,
     words_in_order,
     write_bytes,
+    zip_info_name,
 )
 
 SMARTPZP_SLOT = "portal.smartpzp.pl"
@@ -210,7 +211,7 @@ class SmartPZPMixin:
                 with zipfile.ZipFile(io.BytesIO(response.body)) as archive:
                     for info in archive.infolist():
                         if not info.is_dir():
-                            members[unicodedata.normalize("NFC", Path(zip_name(info)).name)] = archive.read(info)
+                            members[unicodedata.normalize("NFC", Path(zip_info_name(info)).name)] = archive.read(info)
             else:
                 # Some buyers' archives fail, so download one file at a time. A single file isn't archived.
                 for key in batch if len(batch) > 1 else []:
@@ -268,17 +269,6 @@ class SmartPZPMixin:
             return scrapy.Request(url, meta=meta, dont_filter=True)
         headers = {"Faces-Request": "partial/ajax"} if "javax.faces.partial.ajax" in formdata else {}
         return scrapy.FormRequest(url, formdata=formdata, headers=headers, meta=meta, dont_filter=True)
-
-
-def zip_name(info):
-    """Return a ZIP member's name. Without the UTF-8 flag, Python decodes it as CP437, but it can be UTF-8 or CP852."""
-    if info.flag_bits & 0x800:
-        return info.filename
-    raw = info.filename.encode("cp437")
-    try:
-        return raw.decode()
-    except UnicodeDecodeError:
-        return raw.decode("cp852")
 
 
 def smartpzp_update(response, component):
