@@ -161,20 +161,82 @@ def zip_info_name(info):
     )
 
 
-def zip_members(directory):
-    """Return ``[name, size]`` for each member in a ZIP file's member list."""
-    members, position = [], 0
+def zip_entries(directory):
+    """Return ``{"name", "size", "crc", "dir"}`` for each member in a ZIP file's member list."""
+    entries, position = [], 0
     while directory[position : position + 4] == b"PK\x01\x02":
-        flags, size, name_length, extra_length, comment_length = struct.unpack(
-            "<H14xIHHH", directory[position + 8 : position + 34]
+        flags, crc, size, name_length, extra_length, comment_length, external = struct.unpack(
+            "<8xH6xI4xIHHH4xI", directory[position : position + 42]
         )
         start = position + 46
         raw = directory[start : start + name_length]
-        members.append(
-            [zip_name(raw, flags, directory[start + name_length : start + name_length + extra_length]), size]
+        extra = directory[start + name_length : start + name_length + extra_length]
+        i = 0
+        while size == ZIP64_OFFSET and i + 12 <= len(extra):
+            kind, length = struct.unpack("<HH", extra[i : i + 4])
+            if kind == 1:  # ZIP64 extended information, whose first field is the size
+                size = struct.unpack("<Q", extra[i + 4 : i + 12])[0]
+            i += 4 + length
+        entries.append(
+            {
+                "name": zip_name(raw, flags, extra),
+                "size": size,
+                "crc": f"{crc:08X}",
+                "dir": raw.endswith((b"/", b"\\")) or bool(external & 0x10) or bool(external >> 16 & 0o040000),
+            }
         )
         position = start + name_length + extra_length + comment_length
-    return members
+    return entries
+
+
+def zip_members(directory):
+    """Return ``[name, size]`` for each member in a ZIP file's member list."""
+    return [[entry["name"], entry["size"]] for entry in zip_entries(directory)]
+
+
+def zip_set_entries(paths, *, spanned=False):
+    """
+    Return ``zip_entries`` for a ZIP file, or a split set's parts in order.
+
+    A spanned set (.z01, .z02, ..., .zip) has a disk per part. A numbered set (.zip.001, .zip.002, ...) is one file cut
+    into parts.
+    """
+    sizes = [path.stat().st_size for path in paths]
+
+    def read(disk, offset, length):
+        if not spanned:
+            disk = 0
+            while disk < len(sizes) - 1 and offset >= sizes[disk]:
+                offset -= sizes[disk]
+                disk += 1
+        chunks = []
+        while length > 0 and disk < len(paths):
+            with paths[disk].open("rb") as f:
+                f.seek(offset)
+                chunks.append(f.read(length))
+            length -= len(chunks[-1])
+            disk, offset = disk + 1, 0
+        return b"".join(chunks)
+
+    last, end = (len(paths) - 1, sizes[-1]) if spanned else (0, sum(sizes))
+    start = max(0, end - 65557)  # the end record, with a comment of up to 64 KiB
+    tail = read(last, start, end - start)
+    at = tail.rfind(b"PK\x05\x06")
+    if at < 0:
+        raise ValueError("no end of central directory record")
+    disk, count, length, offset = struct.unpack("<2xH2xHII", tail[at + 4 : at + 20])
+    if ZIP64_OFFSET in {length, offset} or 0xFFFF in {disk, count}:  # noqa: PLR2004
+        if tail[at - 20 : at - 16] != b"PK\x06\x07":
+            raise ValueError("no ZIP64 end of central directory locator")
+        record_disk, record_offset = struct.unpack("<IQ", tail[at - 16 : at - 4])
+        record = read(record_disk, record_offset, 56)
+        if record[:4] != b"PK\x06\x06":
+            raise ValueError("no ZIP64 end of central directory record")
+        disk, count, length, offset = struct.unpack("<20xI8xQQQ", record)
+    entries = zip_entries(read(disk, offset, length))
+    if len(entries) != count:
+        raise ValueError(f"{len(entries)} members in the member list, expected {count}")
+    return entries
 
 
 def host(url):
