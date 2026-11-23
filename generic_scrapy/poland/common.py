@@ -361,6 +361,13 @@ def archive_members(path):
     return None
 
 
+def require_store(directory):
+    """Return a store's directory, or raise if it links to a drive that isn't attached, rather than start another."""
+    if directory.is_symlink() and not directory.exists():
+        raise RuntimeError(f"The document store isn't attached: {directory} links to {directory.readlink()}")
+    return directory
+
+
 def host(url):
     return urlparse(url if "://" in url else f"https://{url}").netloc.lower().split(":")[0].removeprefix("www.")
 

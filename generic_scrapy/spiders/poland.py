@@ -22,6 +22,7 @@ from generic_scrapy.poland.common import (
     archive_members,
     host,
     parse_datetime,
+    require_store,
     same_buyer,
     skippable,
     text_layer,
@@ -188,6 +189,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
         self._seen = set()
 
     async def start(self):
+        self.output_directory()
         if self.notice_numbers:
             for request in self.control_requests():
                 yield request
@@ -211,7 +213,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
     # notice_numbers mode.
 
     def output_directory(self):
-        return Path(self.settings["FILES_STORE"], self.output)
+        return require_store(Path(self.settings["FILES_STORE"], self.output))
 
     def control_requests(self):
         directory = self.output_directory() / "runs"
