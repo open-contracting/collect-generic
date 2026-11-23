@@ -35,7 +35,13 @@ MARKETPLANET_START_DAYS = 14
 MARKETPLANET_QUERY_LENGTH = 60
 MARKETPLANET_TITLE_MATCH = 30
 # Marketplanet hosts its own platform (ezamawiajacy.pl) and buyers' white-label platforms.
-MARKETPLANET_HOSTS = ("ezamawiajacy.pl", "platformazakupowa.plk-sa.pl", "lasy.gov.pl", "zamowienia.um.warszawa.pl")
+MARKETPLANET_HOSTS = (
+    "ezamawiajacy.pl",
+    "platformazakupowa.plk-sa.pl",
+    "lasy.gov.pl",
+    "zamowienia.um.warszawa.pl",
+    "zakupy.energa-operator.pl",
+)
 
 
 class MarketplanetMixin:

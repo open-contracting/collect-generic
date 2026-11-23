@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-22"
+__generated_at__ = "2026-11-23"
 
 import bz2
 import collections
@@ -28,6 +28,12 @@ HOST_TYPOS = {
     "platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl",
     "www.platformazakupowa-plk-sa.pl": "platformazakupowa.plk-sa.pl",
 }
+# Hosts whose firewalls reject the spider's user agent.
+BROWSER_USER_AGENT_HOSTS = {"zakupy.energa-operator.pl"}
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 # A split ZIP set's parts: .z01, .z02, ..., .zip (spanned) or .zip.001, .zip.002, ... (numbered).
 SPANNED_PART_RE = re.compile(r"\.z(\d{2})$", re.IGNORECASE)
 NUMBERED_PART_RE = re.compile(r"\.zip\.(\d{3})$", re.IGNORECASE)
@@ -385,6 +391,14 @@ def require_store(directory):
 
 def host(url):
     return urlparse(url if "://" in url else f"https://{url}").netloc.lower().split(":")[0].removeprefix("www.")
+
+
+class BrowserUserAgentMiddleware:
+    """Send a browser's user agent to the hosts in ``BROWSER_USER_AGENT_HOSTS``."""
+
+    def process_request(self, request):
+        if host(request.url) in BROWSER_USER_AGENT_HOSTS:
+            request.headers["User-Agent"] = BROWSER_USER_AGENT
 
 
 def parse_size(text):

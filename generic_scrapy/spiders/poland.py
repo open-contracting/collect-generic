@@ -149,6 +149,10 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
     default_from_date = "2021-01-01"
 
     custom_settings = {
+        "DOWNLOADER_MIDDLEWARES": {
+            # After UserAgentMiddleware (400).
+            "generic_scrapy.poland.common.BrowserUserAgentMiddleware": 450,
+        },
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
         "DOWNLOAD_DELAY": 0.5,
         # The TED Search API answers bursts with HTTP 429, and ted.europa.eu with a WAF challenge. TED's fair usage
