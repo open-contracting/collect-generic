@@ -5,6 +5,7 @@ __generated_at__ = "2026-11-22"
 import bz2
 import collections
 import datetime as dt
+import hashlib
 import html
 import json
 import lzma
@@ -359,6 +360,20 @@ def archive_members(path):
     except OSError, ValueError, struct.error:
         pass
     return None
+
+
+def describe_file(document, path):
+    """Set a stored file's ``sha256`` and ``file_size`` on its document, and ``members`` for a ZIP entry point."""
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        while chunk := f.read(1 << 20):
+            digest.update(chunk)
+    document["sha256"] = digest.hexdigest()
+    document["file_size"] = path.stat().st_size
+    if (members := archive_members(path)) is not None:
+        document["members"] = members
+    else:
+        document.pop("members", None)
 
 
 def require_store(directory):

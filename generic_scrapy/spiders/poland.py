@@ -19,7 +19,7 @@ from generic_scrapy.poland.common import (
     HTML_PAGE_ERROR,
     HTML_RE,
     TENDER_ID_RE,
-    archive_members,
+    describe_file,
     host,
     parse_datetime,
     require_store,
@@ -173,11 +173,14 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
         "DOWNLOAD_WARNSIZE": 128 * 1024 * 1024,
     }
 
-    def __init__(self, *args, notice_numbers=None, priority=None, platforms=None, output=None, **kwargs):
+    def __init__(
+        self, *args, notice_numbers=None, priority=None, platforms=None, output=None, skip_large=None, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.notice_numbers = notice_numbers
         self.output = output or "poland_tender_documents"
         self.priority = priority.split(",") if priority else None
+        self.skip_large = skip_large != "false"
         # Platform adapters are opt-in. Check a platform's terms of use before collecting from it.
         self.platforms = set(platforms.split(",")) if platforms else set()
         self.manifest = []
@@ -369,8 +372,8 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
         else:
             row["reason"] = "; ".join(r["error"] for r in resolutions if r.get("error")) or "no documents URL"
         for document in row["documents"]:
-            if document.get("path") and (members := archive_members(self.output_directory() / document["path"])):
-                document["members"] = members
+            if document.get("path"):
+                describe_file(document, self.output_directory() / document["path"])
         set_status(row, files)
 
         self.log_row(row)
@@ -440,7 +443,11 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             # Re-runs with the same crawl_time resume, as Marketplanet downloads aren't cached.
             if not (directory / path).exists():
                 size = entry["size"] or 0
-                if size > SKIPPABLE_FILE_SIZE and (category := skippable(entry["title"], entry.get("file_name"))):
+                if (
+                    self.skip_large
+                    and size > SKIPPABLE_FILE_SIZE
+                    and (category := skippable(entry["title"], entry.get("file_name")))
+                ):
                     entry["skipped"] = category
                     if path.suffix.lower() == ".zip":
                         entry["contents"] = await self.zip_contents(request, size)
