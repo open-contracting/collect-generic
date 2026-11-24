@@ -27,6 +27,7 @@ TENDER_ID_RE = re.compile(r"ocds-148610-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 HOST_TYPOS = {
     "platformazakupowaz.plk-sa.pl": "platformazakupowa.plk-sa.pl",
     "www.platformazakupowa-plk-sa.pl": "platformazakupowa.plk-sa.pl",
+    "gminalaziska.ezamawiajacy.p": "gminalaziska.ezamawiajacy.pl",
 }
 # Hosts whose firewalls reject the spider's user agent.
 BROWSER_USER_AGENT_HOSTS = {"zakupy.energa-operator.pl"}
@@ -461,7 +462,7 @@ def normalize_url(url):
     """Unescape HTML entities, strip trailing punctuation and correct misspelled hosts in a notice's documents URL."""
     url = html.unescape(url).rstrip(".,;)")
     for typo, correct in HOST_TYPOS.items():
-        url = re.sub(rf"^(?:https?://)?{re.escape(typo)}", f"https://{correct}", url)
+        url = re.sub(rf"^(?:https?://)?{re.escape(typo)}(?=[/:?#]|$)", f"https://{correct}", url)
     return url
 
 
