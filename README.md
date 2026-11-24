@@ -49,7 +49,7 @@ A documents URL on `ezamowienia.gov.pl` gives the tender ID. The files go under 
 
 #### Platform adapters
 
-Platform adapters are opt-in, with `-a platforms=marketplanet,logintrade,eb2b,smartpzp`. Check a platform's terms of use and robots.txt before collecting from it. Open Nexus prohibits automated downloading from `platformazakupowa.pl` and has reserved its database against text and data mining (art. 8a of the database protection act), so there is no adapter for it.
+Platform adapters are opt-in, with `-a platforms=marketplanet,logintrade,eb2b,smartpzp,zeto,josephine`. Check a platform's terms of use and robots.txt before collecting from it. Open Nexus prohibits automated downloading from `platformazakupowa.pl` and has reserved its database against text and data mining (art. 8a of the database protection act), so there is no adapter for it.
 
 Each adapter is a mixin in `generic_scrapy/poland/<platform>.py`. On every platform, the spider downloads the SWZ (*specyfikacja warunków zamówienia*, the terms of reference), OPZ (*opis przedmiotu zamówienia*, the description of what's procured), contract terms, changes and answers first, then annexes and other files, up to 2 GB each. It records but doesn't download design documentation (drawings, design archives) and bills of quantities (przedmiar, kosztorys inwestorski) over 100 MB; for a ZIP file, it lists the members from the archive's end with two small range requests. With `-a skip_large=false`, it downloads them too; one that fails to download keeps its `skipped` category alongside its `error`, so it doesn't count as a missing key document. Pricing forms (*formularz cenowy*; RCO, *rozbicie ceny ofertowej*; *kosztorys ofertowy*), technical specifications (STWiORB, *specyfikacje techniczne wykonania i odbioru robót budowlanych*; *opis techniczny*) and the PFU (*program funkcjonalno-użytkowy*, the functional and utility programme for design-and-build works) are always downloaded. A response whose body is an HTML page (e.g. *Podany plik nie został znaleziony*, "the file wasn't found") is recorded as an error and not saved, unless the file is named `.htm` or `.html`.
 
@@ -76,6 +76,14 @@ A file's `state` is the attachment's type (e.g. *Załączniki organizatora*, the
 ##### SmartPZP
 
 With `-a platforms=smartpzp`, a documents URL on `portal.smartpzp.pl` is either the procedure's page (`<buyer>/public/postepowanie?postepowanie=<id>`) or the buyer's page, in which case the procedure is found by searching the buyer's procedures, finished or not, for the reference number, and opening it from the results. The pages are JSF (JavaServer Faces) views, so each control has its own session. The spider saves the procedure page and lists the documents table (*Dokumentacja Postępowania*, procedure documentation) page by page, then downloads the documents in archives of up to 20 files with distinct names (or one at a time, as some buyers' archives fail), under `<control_id>/smartpzp-<id>/`. It takes the bid deadline from the page.
+
+##### ZETO PZP
+
+With `-a platforms=zeto`, a documents URL on a buyer's instance of ZETO's *Platforma Zamówień Publicznych* (public procurement platform; `zamowienia.olsztyn.eu` or `przetargi.lubelskie.straz.gov.pl`) is either the procedure's page (`#/offer/<uuid>`) or the platform's home page, in which case the procedure is found by searching the procedures' names for the notice's title, and accepting those whose number is the reference number. The pages are a JavaScript app over a JSON API, which serves public procedures without a login: the spider saves the procedure (`/api/Offers/<uuid>/Offers`, as `procedure.json`) and downloads each of its attachments (`/api/Offers/<uuid>/Attachments/<attachmentUuid>`) under `<control_id>/zeto-<uuid>/`. It takes the bid deadline from the procedure (`offersDate`). The procedure lists each attachment's SHA-256 hash, in base64. The platforms' terms let anyone use the public area, to search procedures and read their public documents, without logging in.
+
+##### JOSEPHINE
+
+With `-a platforms=josephine`, a documents URL on `josephine.proebiz.com` (PROEBIZ's JOSEPHINE) is either a tender's page (`/pl/tender/<id>/summary`) or the buyer's profile (`/pl/profile/<id>`), in which case the procedure is found by filtering the buyer's tenders on the reference number. A notice can give several tenders' pages, of which the spider keeps the one with the reference number. The spider saves the tender page and downloads each file in its documents tables (`/pl/tender/<id>/summary/download/<file id>`) under `<control_id>/josephine-<id>/`, titled `<type> / <name>`. It takes the bid deadline from the page.
 
 #### Output
 

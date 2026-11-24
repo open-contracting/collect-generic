@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-23"
+__generated_at__ = "2026-11-24"
 
 import collections
 import csv
@@ -13,8 +13,10 @@ from scrapy.exceptions import UsageError
 
 from generic_scrapy.poland.common import host, require_store
 from generic_scrapy.poland.eb2b import EB2B_HOSTS
+from generic_scrapy.poland.josephine import JOSEPHINE_HOST
 from generic_scrapy.poland.marketplanet import MARKETPLANET_HOSTS
 from generic_scrapy.poland.smartpzp import SMARTPZP_SLOT
+from generic_scrapy.poland.zeto import ZETO_HOSTS
 
 STORES = ["poland_tender_documents", "poland_kio_tender_documents"]
 
@@ -31,6 +33,10 @@ def adapter(name):
         return "eb2b"
     if name == SMARTPZP_SLOT:
         return "smartpzp"
+    if name in ZETO_HOSTS:
+        return "zeto"
+    if name == JOSEPHINE_HOST:
+        return "josephine"
     return ""
 
 

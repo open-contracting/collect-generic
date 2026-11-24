@@ -32,10 +32,12 @@ from generic_scrapy.poland.common import (
 )
 from generic_scrapy.poland.eb2b import EB2B_HOSTS, EB2B_LIMIT_ERROR, EB2B_LIMIT_RE, EB2B_SLOT, EB2BMixin
 from generic_scrapy.poland.ezamowienia import DELETED_AUTOMATICALLY, EZamowieniaMixin
+from generic_scrapy.poland.josephine import JOSEPHINE_HOST, JosephineMixin
 from generic_scrapy.poland.logintrade import LogintradeMixin
 from generic_scrapy.poland.marketplanet import MARKETPLANET_HOSTS, MarketplanetMixin
 from generic_scrapy.poland.smartpzp import SMARTPZP_SLOT, SmartPZPMixin
 from generic_scrapy.poland.ted import TEDMixin, ted_publication_number
+from generic_scrapy.poland.zeto import ZETO_HOSTS, ZETO_OFFER_RE, ZetoMixin
 
 JSON_ERROR_RE = re.compile(rb'\s*\{\s*"success"\s*:\s*false\b')
 # Documents published after the bid deadline, or on its day for the opening.
@@ -155,7 +157,17 @@ def stored(row):
     return any(document.get("path") for document in row["documents"])
 
 
-class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2BMixin, SmartPZPMixin, BaseSpider):
+class Poland(
+    TEDMixin,
+    EZamowieniaMixin,
+    MarketplanetMixin,
+    LogintradeMixin,
+    EB2BMixin,
+    SmartPZPMixin,
+    ZetoMixin,
+    JosephineMixin,
+    BaseSpider,
+):
     """
     Per-procedure file collector for the Polish public-procurement portal (ezamowienia.gov.pl).
 
@@ -367,6 +379,13 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             platform = await self.collect_eb2b(urls[0], references, directory)
         elif not tender_ids and urls and "smartpzp" in self.platforms and host(urls[0]) == SMARTPZP_SLOT:
             platform = await self.collect_smartpzp(urls[0], references, directory)
+        elif not tender_ids and urls and "zeto" in self.platforms and host(urls[0]) in ZETO_HOSTS:
+            resolution = next((r for r in resolutions if r.get("title")), None)
+            url = next((u for u in urls if ZETO_OFFER_RE.search(u)), urls[0])
+            platform = await self.collect_zeto(url, references, directory, resolution)
+        elif not tender_ids and urls and "josephine" in self.platforms and host(urls[0]) == JOSEPHINE_HOST:
+            other_urls = [u for r in resolutions for u in r.get("other_urls", [])]
+            platform = await self.collect_josephine(urls[0], references, directory, other_urls)
         if platform:
             row["documents"].extend(platform.get("documents", []))
             if platform.get("deadline"):
