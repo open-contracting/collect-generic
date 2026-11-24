@@ -47,6 +47,8 @@ MINOR_ROLES = {"annex", "other"}
 SKIPPABLE_FILE_SIZE = 100 * 1024 * 1024
 # Some OPZ archives are several hundred MB.
 MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
+# PKP PLK's platform cuts downloads at random points and ignores Range requests, so larger files rarely complete.
+HOST_MAX_FILE_SIZE = {"platformazakupowa.plk-sa.pl": 200 * 1024 * 1024}
 # The end of a ZIP file, which holds its member list unless the archive has thousands of members.
 ZIP_TAIL_SIZE = 64 * 1024
 # Controls collected at a time, in priority order. They share the per-domain download slots.
@@ -493,6 +495,9 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                         continue
                 if size > MAX_FILE_SIZE:
                     entry["error"] = "not downloaded (over 2 GB)"
+                    continue
+                if size > (limit := HOST_MAX_FILE_SIZE.get(host(request.url), MAX_FILE_SIZE)):
+                    entry["error"] = f"not downloaded (over {limit // 1024 // 1024} MB on this platform)"
                     continue
                 # Some files are hundreds of MB, and platforms can send them slowly.
                 request.meta.update(
