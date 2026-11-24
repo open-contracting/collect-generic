@@ -16,7 +16,7 @@ EB2B_LIMIT_ERROR = "platform error: download limit"
 # For example: "Przekroczono dozwolony limit pobierania plików [...] (za 19 min. 30 sek.)", "(za  5 sek.)" or "(za  )"
 EB2B_LIMIT_RE = re.compile(r"limit pobierania.*?\(\w+\s*(?:(\d+) min\.)?\s*(?:(\d+) sek\.)?\s*\)", re.DOTALL)
 EB2B_SLOT = "eb2b.com.pl"
-EB2B_HOSTS = (EB2B_SLOT, "ezamowienia.krus.gov.pl", "ezamowienia.ms.gov.pl")
+EB2B_HOSTS = (EB2B_SLOT, "ezamowienia.krus.gov.pl", "ezamowienia.ms.gov.pl", "przetargi.pse.pl")
 EB2B_PROCEDURE_RE = re.compile(r"/open-preview-auction\.html/(\d+)")
 EB2B_PARAMS_PREFIX = 'App.initController("AuctionPreviewOpen", '
 
