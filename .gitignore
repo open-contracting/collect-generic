@@ -8,4 +8,5 @@ venv/
 /data
 /debug.log
 /*.csv
+/polandpzp
 .scrapy/

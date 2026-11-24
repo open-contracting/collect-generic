@@ -79,8 +79,8 @@ class PolandPzp(ScrapyCommand):
         parser.add_argument(
             "--output-dir",
             type=str,
-            default=".",
-            help="Directory to write the CSV outputs to (default: cwd)",
+            default="polandpzp",
+            help="Directory to write the CSV outputs to (default: polandpzp)",
         )
         parser.add_argument(
             "--kio-crawl",

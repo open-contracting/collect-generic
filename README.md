@@ -205,10 +205,10 @@ scrapy polandplatforms --stores poland_tender_documents --output platforms.csv
 
 ## `polandpzp` command
 
-Aggregates the distributions of articles of the Pzp (*Prawo zamówień publicznych*, the Public Procurement Law) from the latest `poland_kio_orzeczenia` and `poland_uzp_kontrole` crawls under `FILES_STORE`. Writes `pzp_article_counts.csv`, `pzp_subclause_counts.csv` and `uzp_category_breakdown.csv` to the cwd or `--output-dir`. When a `poland_cpv` crawl is also present, additionally writes `cpv_counts.csv` and `cpv_division_by_dimension.csv` (cross-tab of CPV, Common Procurement Vocabulary, division × the quality dimension of the OPZ, the description of what's procured, with three "simple-subset" filtered rows for divs 48/72/33).
+Aggregates the distributions of articles of the Pzp (*Prawo zamówień publicznych*, the Public Procurement Law) from the latest `poland_kio_orzeczenia` and `poland_uzp_kontrole` crawls under `FILES_STORE`. Writes `pzp_article_counts.csv`, `pzp_subclause_counts.csv` and `uzp_category_breakdown.csv` to `polandpzp/` or `--output-dir`. When a `poland_cpv` crawl is also present, additionally writes `cpv_counts.csv` and `cpv_division_by_dimension.csv` (cross-tab of CPV, Common Procurement Vocabulary, division × the quality dimension of the OPZ, the description of what's procured, with three "simple-subset" filtered rows for divs 48/72/33).
 
 ```
-scrapy polandpzp                                # latest crawls → CSVs in cwd
+scrapy polandpzp                                # latest crawls → CSVs in polandpzp/
 scrapy polandpzp --output-dir ./out
 scrapy polandpzp --kio-crawl 20260603_142206    # specific crawl dirs (also --uzp-crawl, --cpv-crawl)
 ```
