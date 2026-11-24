@@ -35,7 +35,7 @@ Per-procedure file collector for e-Zamówienia (`ezamowienia.gov.pl`), Poland's 
 
 Both write under `data/poland/<crawl_directory>/<tenderId>/`, and skip tenders whose `tender.json` is already on disk.
 
-- `-a notice_numbers=<csv>`: collects the tender documents of controls by the Public Procurement Office (UZP, *Urząd Zamówień Publicznych*), for `oecd-poland/analysis/labels/tender_document_requests.csv`. The CSV needs `control_id` and `notice_ids` (`; `-separated notice numbers from BZP, the Public Procurement Bulletin (*Biuletyn Zamówień Publicznych*), or from TED, the EU's procurement journal (OJ S or eForms), normalised as in `poland_uzp_wyniki_kontroli`). Optional `cn_split`, `art124_split` and `missing_identifier` columns set each control's priority group (`cn_test`, `art124_test`, `dev`, `art124_train`, `cn_aux`, assigned in that order), and `-a priority=cn_test,art124_test` selects groups. An optional `buyer` column names the procedure's buyer. A control isn't collected if its notices' buyers (or the `buyer`) differ, as when a notice number is taken from a document that cites another procedure; TED notices from buyers outside Poland are ignored. `-a sample=N` takes the first N controls in priority order.
+- `-a notice_numbers=<csv>`: collects the tender documents of controls by the Public Procurement Office (UZP, *Urząd Zamówień Publicznych*), for `oecd-poland/labels/data/tender_document_requests.csv`. The CSV needs `control_id` and `notice_ids` (`; `-separated notice numbers from BZP, the Public Procurement Bulletin (*Biuletyn Zamówień Publicznych*), or from TED, the EU's procurement journal (OJ S or eForms), normalised as in `poland_uzp_wyniki_kontroli`). Optional `cn_split`, `art124_split` and `missing_identifier` columns set each control's priority group (`cn_test`, `art124_test`, `dev`, `art124_train`, `cn_aux`, assigned in that order), and `-a priority=cn_test,art124_test` selects groups. An optional `buyer` column names the procedure's buyer. A control isn't collected if its notices' buyers (or the `buyer`) differ, as when a notice number is taken from a document that cites another procedure; TED notices from buyers outside Poland are ignored. `-a sample=N` takes the first N controls in priority order.
 
 #### Notice resolution
 
@@ -147,7 +147,7 @@ For each file, saves the PDF and its text under `data/poland_uzp_wyniki_kontroli
 - `text_status`: `text`, `ocr` or `empty`.
 - The header fields `authority`, `contract_type`, `subject`, `procedure_type`, `procedure_start`, `notice` (as written), `notice_ids` (normalised), `value` (as written) and `result_date`; the value's figures, `value_figures` (each amount after *Wartość zamówienia*, the contract value, in the header, in PLN and EUR, with its label); `value_pln` and `value_eur`, the controlled procedure's value (the figure labelled as controlled, like *kontrolowane zamówienie*, the controlled contract, or else the first); and `whole_value_pln`, `whole_value_eur` and `whole_value_label`, the first figure labelled as the whole contract or project, like *całkowita wartość zamówienia* (the contract's total value), *część zamówienia o wartości* (part of a contract worth) or *wartość całego projektu* (the whole project's value) (it can be the controlled procedure's value, and a project's value isn't necessarily a contract's); then `outcome` (`breach` or `no_breach`), `breach_statement`, `breached_articles` (like `art. 99 ust. 4`, article 99 paragraph 4) and `law` (`2004` or `2019`).
 
-At the end of the crawl, writes one row per control to `controls.json` and `controls.csv`, with the columns of `oecd-poland/analysis/uzp_manifest.csv`, plus `value_pln`, `value_eur`, `whole_value_pln`, `whole_value_eur`, `whole_value_label`, `value_figures`, `file_kinds`, `law`, `breached_articles` and `breach_statement`. In the CSV, multiple values are joined with `; `. Header fields come from the control's result files first. `outcome` is `not_controlled` if a file says so, `breach` if any result (one per part, for a control split into parts) finds a breach, and otherwise the first outcome found.
+At the end of the crawl, writes one row per control to `controls.json` and `controls.csv`, with the columns of `oecd-poland/labels/data/uzp_manifest.csv`, plus `value_pln`, `value_eur`, `whole_value_pln`, `whole_value_eur`, `whole_value_label`, `value_figures`, `file_kinds`, `law`, `breached_articles` and `breach_statement`. In the CSV, multiple values are joined with `; `. Header fields come from the control's result files first. `outcome` is `not_controlled` if a file says so, `breach` if any result (one per part, for a control split into parts) finds a breach, and otherwise the first outcome found.
 
 Notice numbers are normalised as `YYYY/BZP NNNNNNNN/VV`, `YYYY/S NNN-NNNNNN`, `NNNNNN-N-YYYY` (pre-2021 BZP) and `N-YYYY` (TED eForms, no leading zeros).
 
@@ -195,11 +195,11 @@ PyMuPDF is AGPL-3.0 licensed (the only AGPL dep in this stack). Combining this r
 
 ## `polandplatforms` command
 
-Counts the `poland` spider's controls (and KIO cases) by platform, to find platforms that are worth an adapter: the rows collected by hand (`collection: manual`) and crawled (whatever their status) in the stores under `FILES_STORE`, and, with `--tasks`, the controls with open tasks in a hand collection CSV (oecd-poland's `analysis/labels/hand_collection.csv`). Each platform shows the spider's adapter for it, if any.
+Counts the `poland` spider's controls (and KIO cases) by platform, to find platforms that are worth an adapter: the rows collected by hand (`collection: manual`) and crawled (whatever their status) in the stores under `FILES_STORE`, and, with `--tasks`, the controls with open tasks in a hand collection CSV (oecd-poland's `labels/hand_collection.csv`). Each platform shows the spider's adapter for it, if any.
 
 ```
 scrapy polandplatforms
-scrapy polandplatforms --tasks ../oecd-poland/analysis/labels/hand_collection.csv
+scrapy polandplatforms --tasks ../oecd-poland/labels/hand_collection.csv
 scrapy polandplatforms --stores poland_tender_documents --output platforms.csv
 ```
 

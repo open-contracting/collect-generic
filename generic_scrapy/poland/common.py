@@ -95,7 +95,7 @@ KEY_RE = re.compile(
     r"|specyfikacj\w* techniczn|opis\w* techniczn|\bpfu\b|program\w* funkcjonalno".translate(FOLD)
 )
 # Characters per page below which a PDF has no text layer to speak of (a scan, drawings or blanks), as in oecd-poland's
-# analysis/inventory.py.
+# control_files/scripts/build_inventory.py.
 NO_TEXT_CHARS_PER_PAGE = 50
 LOW_TEXT_CHARS_PER_PAGE = 300
 TEXT_LAYER_PAGES = 20

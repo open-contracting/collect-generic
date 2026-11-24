@@ -93,7 +93,7 @@ NOTICE_RE = re.compile(
     r"20\d\d/[S$] \d{1,3}\s*-\s*\d{8}-20\d\d|20\d\d/[S$] \d{1,3}\s*-\s*\d{5,7}(?!\d)"
     r"|20\d\d/BZP \d{6,8}(?:/\d{2})?|\d{6}-N-20\d\d|\b\d{5,8}\s*-\s*20\d\d\b"
 )
-# Same normalisation as oecd-poland's poc/build_labels.py.
+# Same normalisation as oecd-poland's labels/scripts/build_uzp_labels.py.
 NOTICE_PATTERNS = (
     # BZP, e.g. "2024/BZP 00354990/01"
     (
