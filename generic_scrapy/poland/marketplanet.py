@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-21"
+__generated_at__ = "2026-11-24"
 
 import re
 from http import HTTPStatus
@@ -75,7 +75,8 @@ class MarketplanetMixin:
             subdirectory = f"marketplanet-{match.group(1)}"
             result["urls"].append(response.url)
             deadline = response.xpath(
-                "//fieldset[span[contains(., 'składania ofert') or contains(., 'zbierania ofert')]]/section"
+                "//fieldset[span[contains(., 'składania ofert') or contains(., 'składania wniosków')"
+                " or contains(., 'zbierania ofert')]]/section"
             ).xpath("normalize-space()")
             if match := MARKETPLANET_DATETIME_RE.match(deadline.get(default="")):
                 result["deadline"] = max(filter(None, [result["deadline"], parse_datetime(match.group(0))]))
