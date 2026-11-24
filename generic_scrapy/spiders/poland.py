@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-21"
+__generated_at__ = "2026-11-23"
 
 import asyncio
 import collections
@@ -59,7 +59,6 @@ PRIORITY_GROUPS = [
     ("cn_aux", lambda row: row.get("cn_split") == "aux"),
 ]
 GROUP_ORDER = {name: i for i, (name, _) in enumerate(PRIORITY_GROUPS)}
-STATUSES = ["not_found", "partial", "complete"]
 
 
 def first_appeal_at(documents):
@@ -79,13 +78,52 @@ def extends(document, deadline):
     return not (OPENING_RE.search(text) and published.date() == deadline.date())
 
 
-def replaces(row, previous):
-    """Return whether a crawled row replaces the manifest's row, which it does unless that row is better or manual."""
+def merge(row, previous):
+    """
+    Return the crawled row, with the stored documents of the manifest's row that the crawl didn't store.
+
+    Return the manifest's row instead if it was collected manually, or if the crawl stored nothing but it did.
+    """
     if previous is None:
-        return True
-    if previous.get("collection") == "manual":
-        return False
-    return quality(row) >= quality(previous)
+        return row
+    if previous.get("collection") == "manual" or (stored(previous) and not stored(row)):
+        return previous
+
+    def identity(document):
+        return document.get("title"), document.get("file_name")
+
+    # A procedure can list several files with the same name.
+    old = collections.defaultdict(list)
+    for document in previous["documents"]:
+        if document.get("path"):
+            old[identity(document)].append(document)
+    documents = []
+    filled = collections.Counter()
+    for document in row["documents"]:
+        if not document.get("path") and old[identity(document)]:
+            documents.append(old[identity(document)].pop(0))
+            filled[document.get("role"), document.get("title")] += 1
+        else:
+            if old[identity(document)]:
+                old[identity(document)].pop(0)
+            documents.append(document)
+    # Documents that the platform no longer lists.
+    documents.extend(d for remaining in old.values() for d in remaining)
+
+    merged = {**row, "documents": documents}
+    merged["files_skipped"] = dict(collections.Counter(d["skipped"] for d in documents if d.get("skipped")))
+    unavailable = []
+    for document in row["key_unavailable"]:
+        if filled[document["role"], document["title"]]:
+            filled[document["role"], document["title"]] -= 1
+        else:
+            unavailable.append(document)
+    merged["key_unavailable"] = unavailable
+    if row["status"] == "partial" and not unavailable:
+        merged["status"], merged["reason"] = "complete", None
+    elif row["status"] == "partial" and (match := re.fullmatch(r"\d+ of (\d+) key files unavailable", row["reason"])):
+        merged["reason"] = f"{len(unavailable)} of {match.group(1)} key files unavailable"
+    return merged
 
 
 def different_buyers(control, resolutions):
@@ -111,8 +149,8 @@ def set_status(row, files):
         row["reason"] = f"{len(unavailable)} of {len(key)} key files unavailable" if unavailable else None
 
 
-def quality(row):
-    return STATUSES.index(row["status"]), sum(1 for document in row["documents"] if document.get("path"))
+def stored(row):
+    return any(document.get("path") for document in row["documents"])
 
 
 class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2BMixin, SmartPZPMixin, BaseSpider):
@@ -410,8 +448,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             with (directory / "manifest.json").open(encoding="utf-8") as f:
                 rows = {row["control_id"]: row for row in map(json.loads, f)}
         for row in self.manifest:
-            if replaces(row, rows.get(row["control_id"])):
-                rows[row["control_id"]] = row
+            rows[row["control_id"]] = merge(row, rows.get(row["control_id"]))
         manifest = sorted(
             rows.values(), key=lambda row: (GROUP_ORDER.get(row["group"], len(GROUP_ORDER)), row["control_id"])
         )
@@ -447,15 +484,13 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             # Re-runs with the same crawl_time resume, as Marketplanet downloads aren't cached.
             if not (directory / path).exists():
                 size = entry["size"] or 0
-                if (
-                    self.skip_large
-                    and size > SKIPPABLE_FILE_SIZE
-                    and (category := skippable(entry["title"], entry.get("file_name")))
-                ):
+                if size > SKIPPABLE_FILE_SIZE and (category := skippable(entry["title"], entry.get("file_name"))):
+                    # Kept if the download fails, so that the status doesn't depend on skip_large.
                     entry["skipped"] = category
-                    if path.suffix.lower() == ".zip":
-                        entry["contents"] = await self.zip_contents(request, size)
-                    continue
+                    if self.skip_large:
+                        if path.suffix.lower() == ".zip":
+                            entry["contents"] = await self.zip_contents(request, size)
+                        continue
                 if size > MAX_FILE_SIZE:
                     entry["error"] = "not downloaded (over 2 GB)"
                     continue
@@ -479,6 +514,7 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
                     )
                     continue
                 write_bytes(directory / path, response.body)
+            entry.pop("skipped", None)
             if path.suffix.lower() == ".pdf" and "text_layer" not in entry:
                 entry["text_layer"] = text_layer((directory / path).read_bytes())
             entry["path"] = str(Path(directory.name, path))
