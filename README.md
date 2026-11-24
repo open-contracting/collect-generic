@@ -88,6 +88,16 @@ Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`
 - `bid_deadline_final` comes from the e-Zamówienia tender's valid submission term or the platform's procedure page, when there is one, and otherwise from the TED notices. A buyer can extend the deadline without a TED notice, so if a document published after the TED deadline (other than an opening, award or appeal document) shows that it was extended, `bid_deadline_final` is empty.
 - Follow-up notices (award, agreement, performance) aren't collected. See [#40](https://github.com/open-contracting/collect-generic/issues/40).
 
+#### Continuous collection
+
+The proof of concept collects documents after a control result or KIO ruling is published, and doesn't archive procedures in advance. To collect for new results continuously, rather than archive all procedures (BZP published 142,425 contract notices in 2025), see [#61](https://github.com/open-contracting/collect-generic/issues/61):
+
+1. **Follow new KIO rulings.** Appeals are lodged and decided while the procedure is open, so resolving each new ruling's notices (`poland_cpv`, then this spider's `notice_numbers` mode) within a few weeks should find most files online.
+2. **Archive procedures above the ex-ante control thresholds** (€20m for works, €10m for supplies and services) when they're published, with the date mode and a value filter that doesn't exist yet. That's a few hundred procedures a year; at the tender store's 0.2 GB per control, about 50–100 GB.
+3. **Don't archive the rest.** Ad-hoc controls take place after the procedure (a median of 436 days from bid deadline to result), so ask the PPO for the copies submitted for the control.
+
+Only some platforms need an archive. In the stores (November 2026), e-Zamówienia had deleted the files of 41 of 61 KIO cases and 17 of 35 controls that it hosted, whereas other platforms still served files for most of theirs (88 of 127 KIO cases and 200 of 249 controls, some from 2022–2023). eB2B shows only procedures in progress, so it needs archiving too. platformazakupowa.pl (Open Nexus) hosts about 28% of both stores' procedures and keeps them, but forbids automated downloads, so its procedures need hand collection, or Open Nexus's permission. PKP PLK's files over 200 MB can't be collected at all.
+
 ### `poland_kio_orzeczenia`
 
 Walks `/Home/Details/<id>` on `orzeczenia.uzp.gov.pl` and writes one row per ruling (both KIO appeals and KIO/KD control opinions). Discovers the upper ID bound by binary search at startup; pass `-a max_id=N` to skip the probe, and `-a min_id=N` to stop at an ID (e.g. the previous crawl's highest, to collect only new rulings). Keeps only rulings from 2023 onward by default (compared by year); pass `-a from_date=2016-01-01` to go further back.
