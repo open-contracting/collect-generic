@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-21"
+__generated_at__ = "2026-11-24"
 
 import datetime as dt
 import json
@@ -198,7 +198,7 @@ class EZamowieniaMixin:
 
     def tender_first_deadline(self, tender):
         terms = self.tender_submission_terms(tender)
-        return terms[0]["term"] if terms else None
+        return parse_datetime(terms[0]["term"]) if terms else None
 
     async def collect_tender(self, tender_id, directory, tender=None):
         """Write the tender's metadata, notices and files to ``directory``. Return the tender and its documents."""

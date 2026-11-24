@@ -1,6 +1,6 @@
 __review_status__ = "unreviewed"
 __generated_by__ = "claude-code/claude-opus-5-5"
-__generated_at__ = "2026-11-23"
+__generated_at__ = "2026-11-24"
 
 import asyncio
 import collections
@@ -352,7 +352,8 @@ class Poland(TEDMixin, EZamowieniaMixin, MarketplanetMixin, LogintradeMixin, EB2
             row["tender_ids"].append(tender_id)
             if deadline := self.tender_final_deadline(tender):
                 row["bid_deadline_final"] = max(filter(None, [row["bid_deadline_final"], deadline.isoformat()]))
-            row["bid_deadline_original"] = row["bid_deadline_original"] or self.tender_first_deadline(tender)
+            if not row["bid_deadline_original"] and (first := self.tender_first_deadline(tender)):
+                row["bid_deadline_original"] = first.isoformat()
         urls = list(dict.fromkeys(u for r in resolutions for u in r.get("urls", [])))
         platform = {}
         references = list(dict.fromkeys(ref for r in resolutions for ref in r.get("references", [])))
