@@ -1,5 +1,21 @@
 # Collect Generic
 
+- [Polish procurement spiders](#polish-procurement-spiders)
+  - [`poland`](#poland)
+    - [Entry modes](#entry-modes)
+    - [Notice resolution](#notice-resolution)
+    - [Platform adapters](#platform-adapters)
+    - [Output](#output)
+    - [Running](#running)
+    - [Caveats](#caveats)
+    - [Continuous collection](#continuous-collection)
+  - [`poland_kio_orzeczenia`](#poland_kio_orzeczenia)
+  - [`poland_uzp_kontrole`](#poland_uzp_kontrole)
+  - [`poland_uzp_wyniki_kontroli`](#poland_uzp_wyniki_kontroli)
+  - [`poland_cpv`](#poland_cpv)
+- [`polandplatforms` command](#polandplatforms-command)
+- [`polandpzp` command](#polandpzp-command)
+
 ## Polish procurement spiders
 
 ### `poland`
