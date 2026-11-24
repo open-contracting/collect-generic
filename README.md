@@ -167,6 +167,16 @@ PyMuPDF is AGPL-3.0 licensed (the only AGPL dep in this stack). Combining this r
 - UZP findings are partly anonymised and the notice number may be redacted in the published "Informacja o wyniku kontroli" PDF.
 - A full run is slow: PDF parsing in the Scrapy event loop is sequential, so ~10k records take several hours. The HTTP cache means re-runs after that are fast.
 
+## `polandplatforms` command
+
+Counts the `poland` spider's controls by platform, to find platforms that are worth an adapter: the rows collected by hand (`collection: manual`) and crawled (whatever their status) in the stores under `FILES_STORE`, and, with `--tasks`, the controls with open tasks in a hand collection CSV (oecd-poland's `analysis/labels/hand_collection.csv`). Each platform shows the spider's adapter for it, if any.
+
+```
+scrapy polandplatforms
+scrapy polandplatforms --tasks ../oecd-poland/analysis/labels/hand_collection.csv
+scrapy polandplatforms --stores poland_tender_documents --output platforms.csv
+```
+
 ## `polandpzp` command
 
 Aggregates PZP-article distributions from the latest `poland_kio_orzeczenia` and `poland_uzp_kontrole` crawls under `FILES_STORE`. Writes `pzp_article_counts.csv`, `pzp_subclause_counts.csv` and `uzp_category_breakdown.csv` to the cwd or `--output-dir`. When a `poland_cpv` crawl is also present, additionally writes `cpv_counts.csv` and `cpv_division_by_dimension.csv` (cross-tab of CPV division × OPZ-quality dimension with three "simple-subset" filtered rows for divs 48/72/33).
