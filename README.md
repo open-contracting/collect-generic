@@ -101,6 +101,8 @@ When the crawl closes, its rows are merged into `manifest.json`: a row replaces 
 
 The spider collects 8 controls at a time, in priority order, and a control waiting out eB2B's download limit lets another start. To stop a crawl cleanly, send SIGUSR1 to the Scrapy process (not `uv`), like `kill -USR1 $(pgrep -f 'python.*scrapy crawl poland')`: the controls in progress finish, the others are skipped, and the crawl writes `coverage.json`. A re-run re-collects every control, but skips platform files already on disk.
 
+For oecd-poland's labelled controls and KIO cases, collect every file, with `-a skip_large=false`: which files reach the model is decided when its corpus is built, not here. A file the spider can't collect goes to hand collection (oecd-poland's `labels/hand_collection.csv`), except PKP PLK's files over 200 MB.
+
 Attachments and notice bodies are cached under `.scrapy/data/poland/_httpcache/`. API responses aren't cached, so re-runs see new documents.
 
 #### Caveats
